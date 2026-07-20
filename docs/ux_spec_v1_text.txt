@@ -1,0 +1,564 @@
+UX / PRODUCT DESIGN SPECIFICATION
+Purchase Order Importer
+Desktop Application — Python / PySide6
+A complete interface architecture for importing Purchase Orders from Excel into Odoo ERP
+Prepared as an implementation-ready specification for frontend engineering.
+Backend treated as a stable black box — this document defines the GUI layer only.
+
+=== [Heading 1] Contents
+1. Design Philosophy
+2. User Journey
+3. Window Layout
+4. Information Hierarchy
+5. Screen Wireframes
+6. Component Specification
+7. Import Progress Experience
+8. Success Experience
+9. Failure Experience
+10. Visual Style System
+11. Accessibility
+12. Future Scalability
+
+=== [Heading 1] 1. Design Philosophy
+The interface exists to make a technical process feel effortless for non-technical staff — and effortlessly diagnosable for IT when something goes wrong.
+
+=== [Heading 2] 1.1 Core Principles
+One task, one screen. The application does exactly one thing: import a Purchase Order file. There is no dashboard to navigate, no sidebar of unrelated modules. The main window IS the product. This reduces cognitive load to near zero — a new hire can use it correctly on day one without training.
+The GUI narrates, it never decides. Because all business logic lives in the Import Controller, the interface's only job is to faithfully represent what the backend is doing and what it returned. This shapes every decision below: no client-side validation messaging, no "smart" pre-checks, no interpretation of data — only honest presentation of controller state.
+Calm technology. Business operations software is used under time pressure, often by people who are not comfortable with computers. The interface should never introduce anxiety through color, motion, or ambiguity. Status is always unambiguous; errors are never cryptic by default.
+Progressive disclosure. Simple summary first, technical detail available on demand. A staff member sees "Import failed — 3 rows could not be matched to a product." An IT technician can expand the same result to see raw XML-RPC fault strings and row-level diagnostics. Same screen, two audiences, no mode switching.
+Predictable, not clever. No hidden gestures, no auto-advancing screens, no surprise dialogs. Every state transition is triggered by an explicit user action or a clearly communicated backend event. Trust is built through consistency, not delight.
+Native desktop conventions. This is a Windows desktop tool used daily. It should feel instantly familiar — standard title bar, standard file dialogs, standard keyboard shortcuts — rather than reinventing platform conventions the way a marketing website might.
+
+=== [Heading 2] 1.2 Reference Points
+The visual and interaction language draws from four products, each contributing a specific lesson:
+
+=== [Heading 2] 1.3 What This Design Deliberately Avoids
+Dashboards, widgets, or panels that exist only to look sophisticated.
+Multi-step wizards for a task that is fundamentally two steps (select file, import).
+Color used decoratively — every color on screen carries meaning.
+Motion for its own sake — animation is used only to communicate state change (e.g. progress), never as flourish.
+Settings screens, preferences panels, or configuration surfaces not requested in scope.
+
+=== [Heading 1] 2. User Journey
+The complete journey from launch to a successful import, with the underlying intent of each step.
+
+=== [Heading 2] 2.1 Primary Flow
+Launch — The app opens directly into its one screen: an empty-state import zone. No splash screen, no login (unless the backend requires Odoo credentials — see §12), no onboarding tour.
+Select file — User drags an Excel file onto the drop zone, or clicks "Browse" to open a native file picker. This is the only required input in the entire application.
+Pre-import confirmation — The selected file appears as a compact file card (name, size, modified date). The primary action button changes from disabled to "Import Purchase Order." No preview of spreadsheet contents is shown — the GUI does not parse Excel, so it cannot honestly preview it. Showing a preview would imply the GUI validated something it did not.
+Start import — User clicks "Import Purchase Order." The button becomes disabled/loading state; the file card locks (cannot be changed mid-import); the progress panel appears in its place.
+Progress — The GUI displays the fixed set of workflow stages provided by the Import Controller (read → validate → resolve vendor → resolve products → create PO) and updates each as the backend reports completion. See §7 for the full reasoning on this design.
+Result — On completion, the progress panel transitions into either a Success panel or a Failure panel (§8, §9). This is the moment of highest attention — the layout foregrounds this above everything else.
+Next action — From the result screen, the user can start a new import ("Import Another File") or, on failure, view details / open the log file. There is no forced dead end.
+
+=== [Heading 2] 2.2 Secondary / Edge Paths
+Wrong file type selected: The drop zone rejects non-Excel files immediately with an inline message ("Please select an .xlsx or .xls file") — this is a file-type check, not business validation, so it is acceptable for the GUI to perform it.
+User cancels mid-import: A "Cancel" affordance is available during the progress phase if the backend supports cancellation. If it does not, this button is omitted entirely rather than shown and silently ignored.
+User wants to inspect a past import: Out of scope for v1, but the layout reserves space for this (see §12 Future Scalability).
+Network / Odoo connection failure: Treated as a Failure result like any other backend failure — same failure screen pattern, with a category that signals "connection" rather than "data."
+
+=== [Heading 2] 2.3 Journey Map Summary
+
+=== [Heading 1] 3. Window Layout
+A single-window application, fixed conceptual structure, resizable within sane bounds. No tabs, no multi-window juggling — everything the user needs is always visible.
+
+=== [Heading 2] 3.1 Structural Regions
+
+=== [Heading 3] Title Bar (native OS chrome)
+Standard Windows title bar showing "Purchase Order Importer." No custom chrome — a custom title bar adds engineering cost and risk for zero UX benefit in an internal business tool. Native chrome is instantly familiar and free.
+
+=== [Heading 3] Header Band
+A slim, fixed band beneath the title bar. Contains: the application name/logo mark (small, left-aligned) and a connection status indicator (right-aligned — a small dot + label showing "Connected to Odoo" or "Not connected"). This is the only persistent chrome. It exists so a user can tell at a glance, before even attempting an import, whether the tool is able to reach the server — surfacing a category of failure before the user wastes time selecting a file.
+
+=== [Heading 3] Primary Content Area
+The single largest region of the window. This area is a state machine with exactly four mutually exclusive states, each replacing the last in place (no navigation, no new window):
+Empty / Import state — file drop zone + browse button
+Ready state — selected file card + primary action button
+Progress state — workflow checklist with live status
+Result state — Success panel or Failure panel
+Keeping these as one region that morphs (rather than four separate screens behind navigation) reinforces that this is one continuous task, not a multi-page wizard.
+
+=== [Heading 3] Footer / Status Strip
+A thin strip anchored to the bottom of the window. Shows secondary, low-priority information: app version, a "View Log File" link, and (post-import) a timestamp of the last import. This is where technical/IT-oriented affordances live so they never compete visually with the primary task.
+
+=== [Heading 2] 3.2 Why This Structure
+Single content region: Business users under time pressure should never have to ask "where do I click next?" A morphing single region guarantees the next action is always in the same visual location.
+Header as trust signal: Surfacing Odoo connection status persistently — not just at import time — lets IT preempt a whole class of "import isn't working" tickets.
+Footer as an escape hatch for complexity: Anything that would intimidate a non-technical user (raw logs, version numbers, diagnostic links) is demoted to the footer, present but never foregrounded.
+
+=== [Heading 2] 3.3 Recommended Window Sizing
+
+=== [Heading 1] 4. Information Hierarchy
+What the eye should land on, in order, at each stage of the journey. This governs type scale, color weight, and spatial priority throughout the visual design.
+
+=== [Heading 2] 4.1 On Launch (Empty State)
+The drop zone itself — large, centered, unmistakably the thing to interact with.
+The instruction text inside it ("Drag your Excel file here, or browse").
+Connection status in the header — quietly present, confirmed with a glance, not demanding attention unless it signals a problem (in which case it becomes the loudest thing on screen).
+
+=== [Heading 2] 4.2 After File Selection
+The file card — filename is the largest, boldest text on screen at this moment.
+The primary action button ("Import Purchase Order") — high contrast, unmistakably the next step.
+A subtle "Remove / Change file" affordance on the card — present but visually quiet.
+
+=== [Heading 2] 4.3 During Progress
+The currently active step — highlighted, animated indicator (spinner or pulsing dot).
+Completed steps — shown with a calm checkmark, in a lower-contrast/settled color so the eye isn't drawn backward.
+Pending steps — muted/greyed, present for context but not competing for attention.
+
+=== [Heading 2] 4.4 On Success
+A single unambiguous success signal (green check + "Purchase Order Created") — large, immediate.
+The Purchase Order ID / reference number — this is the one piece of data the user came for; it must be the most prominent piece of text on the result screen, easily copyable.
+Row summary ("12 of 12 rows imported") — secondary confirmation, smaller type.
+Next-step actions ("Import Another File", "Open in Odoo") — clearly available but not competing with the PO number.
+
+=== [Heading 2] 4.5 On Failure
+A single unambiguous failure signal (red/amber icon + plain-language headline) — what went wrong, in one sentence a non-technical person can act on.
+The specific, actionable detail if available (e.g. "Row 7: Vendor 'ACME Corp' not found in Odoo") — this is what lets a business user often self-correct without calling IT.
+A de-emphasized "View Technical Details" disclosure — present, low-contrast, expandable — for IT escalation.
+Retry / next-step action.
+
+=== [Heading 1] 5. Screen Wireframes
+ASCII wireframes of every primary state, at the recommended default window size of 760×560. Proportions are illustrative of hierarchy, not pixel-exact.
+
+=== [Heading 2] 5.1 Empty State — Initial Launch
+┌──────────────────────────────────────────────────────────────────┐
+│  Purchase Order Importer                              ─  □  ✕     │  ← native title bar
+├──────────────────────────────────────────────────────────────────┤
+│  ◆ PO Importer                          ● Connected to Odoo       │  ← header band, 44px
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│                                                                    │
+│        ┌────────────────────────────────────────────────┐        │
+│        │                                                  │        │
+│        │                    ⬆                             │        │
+│        │                                                  │        │
+│        │        Drag your Excel file here                │        │
+│        │                                                  │        │
+│        │             — or —                               │        │
+│        │                                                  │        │
+│        │           [  Browse Files  ]                     │        │
+│        │                                                  │        │
+│        │       Supports .xlsx and .xls                    │        │
+│        │                                                  │        │
+│        └────────────────────────────────────────────────┘        │
+│                                                                    │
+│                                                                    │
+├──────────────────────────────────────────────────────────────────┤
+│  v1.2.0                                    View Log File          │  ← footer, 32px
+└──────────────────────────────────────────────────────────────────┘
+   760 px wide × 560 px tall (default)
+
+=== [Heading 2] 5.2 Ready State — File Selected
+┌──────────────────────────────────────────────────────────────────┐
+│  Purchase Order Importer                              ─  □  ✕     │
+├──────────────────────────────────────────────────────────────────┤
+│  ◆ PO Importer                          ● Connected to Odoo       │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│   ┌──────────────────────────────────────────────────────────┐   │
+│   │  📄  Q3_PurchaseOrder_DRInternational.xlsx          ✕     │   │
+│   │       248 KB · Modified 2 minutes ago                     │   │
+│   └──────────────────────────────────────────────────────────┘   │
+│                                                                    │
+│                                                                    │
+│                  ┌──────────────────────────────┐                │
+│                  │   Import Purchase Order        │                │
+│                  └──────────────────────────────┘                │
+│                                                                    │
+│                     Change file                                   │
+│                                                                    │
+│                                                                    │
+├──────────────────────────────────────────────────────────────────┤
+│  v1.2.0                                    View Log File          │
+└──────────────────────────────────────────────────────────────────┘
+
+=== [Heading 2] 5.3 Progress State
+┌──────────────────────────────────────────────────────────────────┐
+│  Purchase Order Importer                              ─  □  ✕     │
+├──────────────────────────────────────────────────────────────────┤
+│  ◆ PO Importer                          ● Connected to Odoo       │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│   Importing Q3_PurchaseOrder_DRInternational.xlsx                 │
+│                                                                    │
+│   ✓  Reading workbook                                             │
+│   ✓  Validating columns                                           │
+│   ✓  Validating rows                                              │
+│   ⟳  Resolving vendor…                                            │
+│   ○  Resolving products                                           │
+│   ○  Creating purchase order                                      │
+│                                                                    │
+│   ▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░  3 / 6 steps                │
+│                                                                    │
+│                                                                    │
+│                        [ Cancel Import ]                          │
+│                                                                    │
+├──────────────────────────────────────────────────────────────────┤
+│  v1.2.0                                    View Log File          │
+└──────────────────────────────────────────────────────────────────┘
+
+=== [Heading 2] 5.4 Success State
+┌──────────────────────────────────────────────────────────────────┐
+│  Purchase Order Importer                              ─  □  ✕     │
+├──────────────────────────────────────────────────────────────────┤
+│  ◆ PO Importer                          ● Connected to Odoo       │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│                           ✓                                       │
+│                 Purchase Order Created                            │
+│                                                                    │
+│                    ┌───────────────────┐                          │
+│                    │   PO00847      📋 │                          │
+│                    └───────────────────┘                          │
+│                                                                    │
+│               12 of 12 rows imported successfully                 │
+│                                                                    │
+│         ┌───────────────────┐  ┌───────────────────────┐         │
+│         │ Import Another File│  │  Open in Odoo   ↗      │         │
+│         └───────────────────┘  └───────────────────────┘         │
+│                                                                    │
+├──────────────────────────────────────────────────────────────────┤
+│  v1.2.0                     Imported at 4:12 PM   View Log File   │
+└──────────────────────────────────────────────────────────────────┘
+
+=== [Heading 2] 5.5 Failure State (Collapsed Technical Detail)
+┌──────────────────────────────────────────────────────────────────┐
+│  Purchase Order Importer                              ─  □  ✕     │
+├──────────────────────────────────────────────────────────────────┤
+│  ◆ PO Importer                          ● Connected to Odoo       │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│                           ⚠                                       │
+│                    Import Could Not Finish                        │
+│                                                                    │
+│   Row 7: Vendor "ACME Corp" could not be matched to a             │
+│   vendor in Odoo. No purchase order was created.                  │
+│                                                                    │
+│   9 of 12 rows validated · 0 rows imported                        │
+│                                                                    │
+│   ▸ View Technical Details                                        │
+│                                                                    │
+│         ┌───────────────┐  ┌───────────────────────┐             │
+│         │  Try Again     │  │  Import Another File   │             │
+│         └───────────────┘  └───────────────────────┘             │
+│                                                                    │
+├──────────────────────────────────────────────────────────────────┤
+│  v1.2.0                                    View Log File          │
+└──────────────────────────────────────────────────────────────────┘
+
+=== [Heading 2] 5.6 Failure State (Expanded Technical Detail)
+   ▾ View Technical Details                                        │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ Error Code:     VENDOR_NOT_FOUND                          │   │
+│  │ Stage:          resolve_vendor                            │   │
+│  │ Raised at:       services/vendor_resolver.py:41            │   │
+│  │                                                             │   │
+│  │ XML-RPC Fault: search_read() returned 0 results for        │   │
+│  │ domain [('name','=','ACME Corp')] on res.partner            │   │
+│  │                                                             │   │
+│  │ [ Copy Details ]              [ Open Full Log File ]        │   │
+│  └──────────────────────────────────────────────────────────┘   │
+
+=== [Heading 1] 6. Component Specification
+Every reusable UI element, its states, and the reasoning behind its design. This section is written so a frontend engineer can build a component library directly from it.
+
+=== [Heading 2] 6.1 Buttons
+All buttons: 8px vertical / 20px horizontal padding, 6px corner radius, 14px medium-weight label, 150ms ease-out transition on hover/press states only — never on load.
+
+=== [Heading 2] 6.2 File Drop Zone
+Default: Dashed 2px border in border-grey, light-grey fill, centered icon + instruction text + Browse button.
+Drag-over (hover with file): Border becomes solid accent color, fill shifts to a very light accent tint (2-3% opacity), icon subtly scales up (1.05x) — the only decorative motion in the app, because it directly communicates "drop here."
+Rejected file (wrong type): Border flashes red briefly, inline text appears below: "Please select an .xlsx or .xls file." This is a file-type check only — never a content/business validation message, which must come from the backend.
+Populated (file selected): The drop zone is replaced entirely by the File Card component (below) — it does not persist alongside it, to avoid two competing focal points.
+
+=== [Heading 2] 6.3 File Card
+A single-row card: file-type icon (left) · filename (bold, truncated with ellipsis + full name on tooltip) · metadata line (size · modified date, muted grey, smaller) · remove icon (right, low-contrast until hovered).
+Specification: white background, 1px border-grey border, 8px corner radius, 16px padding, subtle 1px drop shadow (0px 1px 2px rgba(0,0,0,0.06)) to lift it very slightly off the page without looking skeuomorphic.
+
+=== [Heading 2] 6.4 Status Badges
+
+=== [Heading 2] 6.5 Workflow Checklist (Progress)
+A vertical list of fixed steps, each row: status icon (left, 20px) + step label (14px) + optional trailing detail text (muted, e.g. row counts once known).
+Design rationale: this is a checklist, not a percentage bar alone, because business users trust concrete named steps ("Resolving vendor") far more than an abstract percentage. A percentage answers "how much," a checklist answers "what, exactly, is happening right now" — which is what builds trust during a process the user cannot otherwise see.
+
+=== [Heading 2] 6.6 Progress Bar (secondary, supplementary)
+A slim (4px) linear bar beneath the checklist, filled in accent color, showing step completion (n of 6). This is deliberately secondary to the checklist — it answers "how close to done," a question the checklist alone doesn't quickly answer at a glance from across a desk.
+
+=== [Heading 2] 6.7 Result Panel
+Shared structural component for both Success and Failure, differing only in color/icon/copy — this consistency means users learn the layout once and recognize both states instantly:
+Status icon, centered, 48px
+Headline, centered, 20px bold
+Key data block (PO number, or primary error line) — visually distinct card
+Summary line (row counts) — 13px muted
+Optional expandable technical detail (failure only)
+Action button row — right-aligned pair, primary + secondary
+
+=== [Heading 2] 6.8 Technical Details Disclosure
+A collapsed-by-default expander (▸ / ▾ chevron + "View Technical Details"), 13px muted-navy text, no border when collapsed. When expanded, reveals a monospace panel: dark background (#0D1117), light text, containing error code, failing stage/service name, and the raw backend fault string — verbatim from the controller, never rewritten by the GUI. Includes "Copy Details" and "Open Full Log File" actions.
+This component is the load-bearing piece of the entire dual-audience strategy: it lets the same screen serve a warehouse coordinator and an IT technician without either feeling like the wrong tool for them.
+
+=== [Heading 2] 6.9 Notifications / Toasts
+Used sparingly — only for background/non-blocking events, e.g. "Log file saved" after a copy action. Bottom-right, auto-dismiss after 4 seconds, neutral grey background (never colored — color is reserved for the result panel's actual status, so a toast never competes with it).
+
+=== [Heading 2] 6.10 Dialogs (Modal)
+Reserved for exactly one interaction in v1: confirming cancellation of an in-progress import ("Cancel this import? Rows already created in Odoo will not be undone."). Centered, 400px wide, scrim at 40% black behind it, two buttons (Keep Importing / Cancel Import — destructive on the right, per Windows convention). Modals are avoided everywhere else in this app; the single-region layout is deliberately designed to make modals unnecessary.
+
+=== [Heading 2] 6.11 Tooltips
+11px, dark background, appear after 500ms hover delay (not instant — avoids flicker on incidental mouse movement). Used for: truncated filenames, the connection-status dot (shows last successful connection time), and disabled-button states (explains why Import is disabled, e.g. "Select a file to continue").
+
+=== [Heading 2] 6.12 Empty States
+The only empty state in this application is the initial launch screen (§5.1) — which is treated as a primary designed state, not an afterthought, since it's what every single session begins with. Copy is instructional, never apologetic ("Drag your Excel file here" — not "No file selected yet").
+
+=== [Heading 2] 6.13 Loading / Busy States
+
+=== [Heading 1] 7. Import Progress Experience
+
+=== [Heading 2] 7.1 The Decision: Checklist, Not Spinner Alone
+A bare spinner ("Importing…") is rejected outright. It tells the user nothing about what is happening, how long it might take, or — critically — which stage failed if something goes wrong. For a process with distinct, named backend stages (read → validate columns → validate rows → resolve vendor → resolve products → create PO), hiding that structure from the user throws away information the backend already has for free.
+A pure percentage progress bar is also rejected as the primary element. Percentages imply a granularity of measurement ("73% done") that this backend does not actually provide — it reports discrete stage completion, not continuous progress within a stage. Showing a bar that appears to move continuously when the underlying data is step-based would be dishonest.
+
+=== [Heading 2] 7.2 The Chosen Pattern: Named Checklist + Supplementary Bar
+The primary progress experience is a vertical checklist mirroring the six backend stages exactly as described in the architecture:
+Reading workbook
+Validating columns
+Validating rows
+Resolving vendor
+Resolving products
+Creating purchase order
+Each step transitions pending → active → complete as the Import Controller reports progress. A thin supplementary progress bar beneath the list gives an at-a-glance "how far along" signal for users who just want a quick glance from across the room, without displacing the checklist as the primary source of truth.
+
+=== [Heading 2] 7.3 Why This Builds Trust
+Specificity over abstraction: "Resolving vendor" is concrete and reassuring. A spinner is not. Naming the step tells the user the system is doing real, sensible work — not stuck.
+Failure locality: If the import fails, the checklist visually freezes with the failing step marked in red and every step after it left pending — the user immediately sees where in the process things went wrong, before even reading the error text.
+No false precision: Steps complete discretely; there's no attempt to interpolate progress within a step the backend hasn't reported sub-progress for. If the backend later exposes row-level progress within "Validating rows," the design accommodates a nested sub-count (e.g. "Validating rows (140 / 300)") without restructuring the component.
+
+=== [Heading 2] 7.4 Timing and Motion
+
+=== [Heading 2] 7.5 What Happens If a Step Takes a Long Time
+If a single stage (e.g. resolving many products against Odoo) runs long, the active step's spinner continues indefinitely — no fake progress, no misleading estimate. After a configurable threshold (e.g. 15 seconds) a small secondary line appears beneath the active step: "This can take a little longer for large files" — reassurance without inventing numbers the backend can't back up.
+
+=== [Heading 1] 8. Success Experience
+
+=== [Heading 2] 8.1 Design Intent
+Success should feel like closure, not celebration. This is a back-office tool used dozens of times a week — confetti or elaborate animation would become irritating by the third use. The success screen's job is to answer one question immediately: "did it work, and what do I do with the result?"
+
+=== [Heading 2] 8.2 Information Shown, in Priority Order
+Status confirmation — green check icon + "Purchase Order Created" headline. Unambiguous, glanceable from a distance.
+The Purchase Order ID/reference — the single most important output of the entire application. Shown in a visually distinct card, large monospace-leaning numeral, with a one-click copy-to-clipboard icon beside it. This is what the user will paste into an email, a tracker, or read aloud on a phone call.
+Row summary — "12 of 12 rows imported successfully," smaller, muted text. Confirms completeness without demanding attention.
+Next actions — two buttons: "Import Another File" (secondary, resets to empty state) and "Open in Odoo" (primary if a direct-link URL is available from the backend/controller; omitted entirely if not — never a dead/disabled link).
+
+=== [Heading 2] 8.3 Partial Success Handling
+If the backend reports rows processed with some rows failed but a PO was still created (e.g. 10 of 12 rows succeeded), this is treated as a distinct visual state — not full success, not full failure: an amber (not green, not red) variant headlined "Purchase Order Created — With Warnings," showing both the PO number and a secondary link "View 2 skipped rows." This prevents a user from missing that some of their data didn't make it in, which a plain green success screen would dangerously obscure.
+
+=== [Heading 2] 8.4 After Success
+The window does not auto-reset and does not auto-close. The result stays visible until the user acts — some users need to read the PO number aloud to a colleague or write it down before moving on, and an auto-dismissing screen would actively work against that.
+
+=== [Heading 1] 9. Failure Experience
+
+=== [Heading 2] 9.1 Design Intent
+Failure is the moment this application is most likely to generate a support ticket, a frustrated phone call, or a stalled business process. The failure screen's entire purpose is to minimize panic and maximize self-resolution — while never lying about what went wrong or hiding information IT will need.
+
+=== [Heading 2] 9.2 The Two-Layer Model
+Every failure is presented in two layers, and the interface never merges them:
+Layer 1 — Plain language (always visible): A single sentence, written for someone with no technical background, describing what happened in terms of the business action they took. E.g. "Row 7: Vendor 'ACME Corp' could not be matched to a vendor in Odoo. No purchase order was created." This sentence must always answer: what failed, and what is the real-world consequence (was anything created or not).
+Layer 2 — Technical detail (collapsed by default): Raw error code, failing service/stage, and backend fault string verbatim — exactly as returned by the Import Controller, with zero GUI-side interpretation or rewriting. This is for IT, reached via one click, never forced on the primary user.
+
+=== [Heading 2] 9.3 Failure Severity Categories
+Not all failures are the same, and treating them identically would waste an opportunity to guide the user. Three visual/copy variants:
+
+=== [Heading 2] 9.4 Multi-Row Failures
+If more than one row failed validation, the plain-language layer summarizes rather than lists everything inline ("3 rows could not be processed" rather than three separate paragraphs), with a secondary link "View all 3 issues" that expands an inline table: row number, column, and plain-language reason — sourced directly from the backend's per-row validation output, never inferred by the GUI.
+
+=== [Heading 2] 9.5 What the User Can Do From Here
+Read the plain-language explanation and, if it's a data issue, fix the Excel file and click "Try Again" — which returns directly to the Ready state with the same file still selected, avoiding a re-browse for a one-cell fix.
+Copy technical details to paste into an email/ticket to IT, without needing to locate a log file manually.
+Open the full log file directly from the failure screen for deeper IT investigation.
+Abandon this file and start over with "Import Another File."
+
+=== [Heading 2] 9.6 Tone of Copy
+Failure copy never uses blame language ("You entered an invalid vendor") — it is always framed around the data and system state ("Vendor 'ACME Corp' could not be matched"). This is a deliberate choice for a tool used by people who may already feel anxious about breaking something in a business-critical ERP system.
+
+=== [Heading 1] 10. Visual Style System
+
+=== [Heading 2] 10.1 Color Palette
+Color is used exclusively to carry meaning (status, hierarchy) — never decoration. The palette is deliberately small.
+No gradient, no secondary accent hue, no decorative illustration color. This restraint is what separates a "business application" feel from a "marketing site" feel.
+
+=== [Heading 2] 10.2 Typography
+
+=== [Heading 2] 10.3 Spacing System
+An 8px base unit throughout, ensuring every margin, padding, and gap is a multiple of 8 (8 / 16 / 24 / 32 / 48). This is the same discipline used by Linear and most modern design systems — it produces visual rhythm without anyone having to think about it case by case.
+
+=== [Heading 2] 10.4 Corner Radius
+6px on all interactive elements (buttons, inputs, badges). 8px on cards and containers. Never fully rounded/pill-shaped — that reads as consumer/mobile rather than business desktop software. Never sharp 0px corners either — that reads as dated Windows 95-era software. 6–8px is the current convention for "modern professional."
+
+=== [Heading 2] 10.5 Elevation & Shadows
+Shadows are used with extreme restraint — one level only. Cards get a barely-perceptible 1px shadow (0px 1px 2px rgba(0,0,0,0.06)) to lift them fractionally off the page. Modals get a single stronger shadow (0px 8px 24px rgba(0,0,0,0.16)) to clearly separate them from the scrim behind. No multi-layer "material design" elevation system — it's unnecessary complexity for a single-window app with no overlapping panels.
+
+=== [Heading 2] 10.6 Iconography
+A single consistent icon set throughout (recommend: Phosphor Icons or Lucide — both open-source, consistent stroke width, available as SVG for crisp rendering at any DPI). Icons are used only where they add scannable meaning (status, file type, actions) — never as pure decoration. Stroke width consistent at 1.5–2px; filled variants reserved specifically for status states (success check, error triangle) to make them pop against otherwise all-outline iconography.
+
+=== [Heading 2] 10.7 Layout Grid
+Single-column content, centered within the window, max content width ~640px (even if the window is wider — see §3.3). All primary content — drop zone, file card, checklist, result panel — shares this same column width and left/right alignment, so nothing ever feels like it's floating independently.
+
+=== [Heading 1] 11. Accessibility
+This is internal business software with a mandatory-use population — accessibility here isn't a nice-to-have, it's what prevents the tool from excluding a staff member who needs it to do their job.
+
+=== [Heading 2] 11.1 Keyboard Navigation
+Full tab-order support through every interactive element in logical reading order (drop zone → browse button → file card actions → primary action button → footer links).
+Enter/Space activates the focused button or the drop zone's browse dialog.
+Escape closes the cancel-confirmation dialog and collapses the technical-details disclosure.
+The technical details expander is fully keyboard-operable (Enter toggles expand/collapse) — this matters specifically because IT staff troubleshooting are power users likely to be keyboard-first.
+A global keyboard shortcut (Ctrl+O) opens the file browse dialog directly from the empty/ready state, matching the Windows-standard "Open" convention.
+
+=== [Heading 2] 11.2 Focus Indicators
+Every focusable element shows a clearly visible focus ring — 2px solid accent blue, offset 2px from the element edge — that meets WCAG 2.1 non-text contrast requirements against both light and card backgrounds. Focus rings are never suppressed via CSS resets; this is a common accessibility failure in custom-styled Qt/web-hybrid apps and is explicitly called out here to prevent it.
+
+=== [Heading 2] 11.3 Color Contrast
+
+=== [Heading 2] 11.4 Screen Reader Support
+All icons that carry meaning (status badges, checklist icons) have accessible labels (e.g. "Step complete: Resolving vendor") — decorative icons are marked presentational and skipped.
+The progress checklist uses ARIA live-region announcements as steps change state, so a screen reader user gets the same real-time reassurance a sighted user gets visually, without needing to poll the screen.
+The result panel's headline is announced immediately on appearance (assertive live region) since it's the single most important event in the whole session.
+
+=== [Heading 2] 11.5 High-DPI & Screen Scaling
+All icons and graphics specified as SVG (vector) rather than raster PNG — guarantees crisp rendering at 100%, 125%, 150%, and 200% Windows display scaling, which is common on modern business laptops.
+All spacing and type sizes specified in DPI-independent logical units (matching Qt's device-independent pixel model), never hardcoded physical pixels.
+Layout tested to remain legible and non-overlapping down to the minimum window size (640×480) at 150% scaling — the most common real-world stress case for this kind of internal tool on a company laptop.
+
+=== [Heading 2] 11.6 Motion Sensitivity
+All transitions are respectful of the OS-level "reduce motion" setting where PySide6/Qt exposes it — when enabled, step transitions become instant state swaps with no crossfade or scale animation, while the checklist and status information remain fully intact (motion is decoration here, never the sole carrier of information, which is what makes this safe to disable).
+
+=== [Heading 1] 12. Future Scalability
+The v1 layout is deliberately minimal, but every structural decision below reserves space and precedent for likely future features — so growth doesn't force a redesign.
+
+=== [Heading 2] 12.1 Import History
+The footer already contains a low-priority link area ("View Log File"). A future "Import History" entry point slots in beside it, or as a new icon-button in the header band (e.g. a clock icon opening a slide-in panel from the right edge). Because the main content area is a self-contained state machine, an Import History panel can be implemented as a completely separate overlay/panel without touching any of the four core states.
+
+=== [Heading 2] 12.2 Settings
+A gear icon reserved in the header band (right side, beside the connection badge) is the natural home for future Settings — Odoo server URL, credentials, default file locations. Kept out of v1 scope per the brief, but the header band's right-aligned icon cluster is designed to accept it without rebalancing the layout.
+
+=== [Heading 2] 12.3 Saved Connections / Multiple Odoo Servers
+The connection status badge in the header is already a distinct, tappable region. Evolving it from a static "Connected to Odoo" label into a dropdown ("Connected to: Production ▾") is a natural, low-disruption extension — the visual language (dot + label) doesn't need to change, only its interactivity.
+
+=== [Heading 2] 12.4 User Profiles
+If multi-user identity becomes relevant (e.g. showing who ran which import in history), a small avatar/initials badge can be added to the far right of the header band, following the same convention as the connection status and future settings icon — a horizontally-growing icon cluster rather than a redesign.
+
+=== [Heading 2] 12.5 Why the Architecture Supports This
+Single content region as a state machine: New states (e.g. "History List") can be added to the same pattern without inventing new navigation paradigms.
+Header band as an extensible icon rail: Already holds one piece of persistent status; built from the start to hold 2-4 more without crowding, given the 8px spacing system.
+Footer as the technical/secondary layer: Establishes precedent that low-priority, IT-oriented, or power-user features live here — future diagnostic or admin features have an obvious, consistent home.
+Component-based specification: Every component in §6 (cards, badges, buttons, disclosures) is generic enough to be reused for history rows, settings fields, or server-selection lists without new visual language being invented.
+End of Specification
+This document defines UI/UX architecture only. No implementation code, business logic, or backend behavior is specified here — all of that remains owned by the existing, stable Import Controller.
+
+--- Table 1 ---
+Reference | What it contributes to this design
+GitHub Desktop | Calm status communication, generous whitespace, a single clear primary action per screen, monospace log output treated as a first-class citizen.
+Linear | Restrained color use — color is reserved for meaning (status), never decoration. Sharp information hierarchy through type weight rather than boxes and borders.
+JetBrains IDEs | Progressive disclosure pattern for error detail; collapsible technical panels that don't intimidate by default but are one click from full diagnostic depth.
+Microsoft Office | Familiarity of interaction patterns (menus, dialogs, file pickers) so business users feel zero friction from day one.
+
+--- Table 2 ---
+Stage | Emotional Goal | Design Response
+Launch | Orientation | Empty, calm, one clear call to action
+Select file | Confidence | Immediate visual confirmation of what was selected
+Start import | Commitment | Clear point of no return; button state changes decisively
+Progress | Reassurance | Visible forward motion, no ambiguity about what's happening
+Success | Relief / closure | Confirmation + concrete result (PO number) + easy next step
+Failure | Clarity, not panic | Plain-language explanation first, technical detail on demand
+
+--- Table 3 ---
+Property | Recommendation
+Default size | 760 × 560 px (logical / DPI-independent)
+Minimum size | 640 × 480 px — below this, the workflow checklist and result panel begin to crowd
+Maximum size | Unconstrained, but content area caps at ~880px content width and centers with margin — prevents an ultrawide monitor from stretching text into an unreadable line length
+Resizable | Yes, standard OS resize handles. Not user-resizable panels within the window — there is only one region, so internal splitters are unnecessary
+
+--- Table 4 ---
+Variant | Specification
+Primary | Solid fill, accent color (#2E6FDB), white text, medium weight. One per screen, maximum. Used for: Import Purchase Order, Try Again.
+Secondary | Outlined, 1px border in border-grey, navy text, transparent fill. Used for: Import Another File, Change File.
+Tertiary / Link | No border, no fill, accent-colored text, underline on hover only. Used for: View Log File, Open in Odoo.
+Destructive | Outlined in red, red text. Used only for: Cancel Import. Never filled red — filled red is reserved for irreversible/dangerous actions this app does not have.
+Disabled | 50% opacity, no hover/focus response, cursor: not-allowed. Import button is disabled until a valid file is selected.
+
+--- Table 5 ---
+Badge | Specification
+Connected | Green dot (#1E7A46) + "Connected to Odoo", 12px label
+Disconnected | Red dot (#B3261E) + "Not connected", 12px label, entire header band gains a 1px red bottom border to raise urgency without a modal
+Connecting… | Amber/grey pulsing dot + "Connecting…"
+Success (result) | Green filled circle, white checkmark, 48px, used once per success screen
+Failure (result) | Amber/red filled circle, white exclamation, 48px, used once per failure screen — amber for validation-type failures, red for connection/system failures (see §9.3)
+
+--- Table 6 ---
+State | Specification
+Pending | Hollow grey circle ○, label in muted grey (#6B7280)
+Active | Animated spinner ⟳ in accent color, label in full-contrast navy, subtly bolder weight
+Complete | Solid green checkmark ✓, label returns to normal weight but stays full-contrast (not muted — completed steps remain legible, unlike "pending" which recedes)
+Failed (this step) | Solid red ✕, label in red, this becomes the terminal state of the checklist — steps after it remain pending/grey permanently
+
+--- Table 7 ---
+Context | Treatment
+App launch / connecting to Odoo | Header connection badge shows amber pulsing "Connecting…"; content area shows the empty state underneath (not blocked) since file selection doesn't require an active connection
+Import running | Full progress-state takeover (§5.3); primary action area is fully replaced, not overlaid, so there's no ambiguity about whether input is still possible
+Any button mid-action | Label replaced with an inline spinner + verb-ing text (e.g. "Importing…"), button stays same width to prevent layout shift
+
+--- Table 8 ---
+Moment | Motion Spec
+Step transition (pending → active) | Instant icon swap to spinner; label weight shifts to bold over 150ms
+Step transition (active → complete) | Spinner morphs to checkmark with a single 200ms scale+fade — the only "celebratory" micro-motion in the app, kept extremely subtle
+Progress bar fill | Animates to new width over 300ms ease-out on each step completion, never a continuous/fake animation between known states
+Whole-panel transition (progress → result) | 250ms crossfade, no slide/bounce — keeps the tone professional rather than playful
+
+--- Table 9 ---
+DESIGN RATIONALE
+Partial success is the most common way a well-intentioned green checkmark can mislead a business user into thinking everything imported when it didn't. Giving it its own amber-toned identity — distinct from both clean success and hard failure — is one of the highest-leverage decisions in this entire spec.
+
+--- Table 10 ---
+Category | Visual | Meaning & Response
+Data / validation failure | Amber icon | Something in the file needs fixing (bad vendor name, missing column, malformed row). Copy points at the file. Primary action: "Try Again" after editing the file.
+Connection / system failure | Red icon | The app could not reach Odoo, or Odoo itself errored. Copy makes clear this is not the user's data's fault. Primary action becomes "Retry Connection" rather than "Try Again," and the header connection badge simultaneously flips to "Not connected."
+Partial completion | Amber icon, distinct from failure | Handled as its own state under Success, §8.3 — never shown on the red/failure track, since a PO was in fact created.
+
+--- Table 11 ---
+Token | Hex | Usage
+Navy 900 | #1B2A4A | Primary text, headlines, header band
+Slate 600 | #44546A | Secondary text, subheadings
+Muted Grey 500 | #6B7280 | Tertiary text, timestamps, pending states
+Border Grey | #D0D5DD | All hairline borders and dividers
+Surface Light | #F2F3F5 | Card backgrounds, subtle section fills
+Accent Blue | #2E6FDB | Primary actions, active/in-progress states, links
+Success Green | #1E7A46 | Success states only
+Warning Amber | #B7791F | Partial success, data-validation failures
+Error Red | #B3261E | Connection/system failures, destructive actions
+White | #FFFFFF | Base background
+
+--- Table 12 ---
+Element | Specification
+Typeface | Segoe UI (Windows system default) — never a custom webfont. Using the OS-native font is free, always renders crisply at any DPI, and reinforces the native-desktop-conventions principle from §1.
+Headline (result screens) | 20px / Semibold / Navy
+Section heading | 16px / Semibold / Navy
+Body text | 14px / Regular / Near-black (#1A1A1A)
+Secondary / muted text | 13px / Regular / Muted Grey
+Micro text (timestamps, footer) | 12px / Regular / Muted Grey
+Monospace (technical details, PO numbers) | Consolas / Cascadia Mono — used specifically because operations staff frequently need to copy exact strings (PO numbers, error codes); monospace makes character-for-character verification easier
+Line height | 1.5 for body copy, 1.3 for headings
+
+--- Table 13 ---
+Context | Value
+Content area outer margin | 32px
+Card internal padding | 16px
+Gap between stacked elements (related) | 8px
+Gap between sections (unrelated) | 32px
+Button internal padding | 8px vertical / 20px horizontal
+
+--- Table 14 ---
+Pairing | Result
+Body text on white | #1A1A1A on #FFFFFF — 16.1:1, exceeds WCAG AAA
+Muted text on white | #6B7280 on #FFFFFF — 4.9:1, meets WCAG AA for normal text
+White text on Accent Blue button | #FFFFFF on #2E6FDB — 4.6:1, meets WCAG AA
+Status colors (green/amber/red) | All paired with an icon shape (check / triangle / circle-x), never color alone — this specifically serves colorblind users, who represent a non-trivial share of any staff population
