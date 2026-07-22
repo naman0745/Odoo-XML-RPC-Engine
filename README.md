@@ -19,7 +19,7 @@ This application is designed as a **conveyer belt** for Purchase Orders:
 - **Power User Navigation:** Full-keyboard traversal (`Enter` / `Esc`) bypasses the need for manual mouse targeting.
 - **In-App Error Recovery:** Seamlessly launch Windows Excel directly from failure screens to immediately correct faulty rows.
 
-### 🛡️ Ironclad Architecture
+### 🛡️Architecture
 - **Idempotency & Duplicate Protection:** Uses cryptographically secure content hashes and manifests to implicitly reject duplicate files, even if the filename is changed.
 - **Sequential Error Resolution:** Accurately distinguishes between structural errors (invalid product vendor-code) and variation errors (missing color strings) to tell users exactly what to fix.
 - **Background Threading:** The GUI remains completely responsive with visual progress indicators, never locking up during heavy remote network writes.
