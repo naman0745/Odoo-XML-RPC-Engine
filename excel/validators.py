@@ -18,9 +18,12 @@ class ExcelValidator:
         """Ensures the workbook has an active sheet."""
         try:
             workbook = openpyxl.load_workbook(self.file_path, read_only=True)
-            if workbook.active is None:
-                return False, "No active worksheet found in the workbook"
-            return True, "Worksheet exists"
+            try:
+                if workbook.active is None:
+                    return False, "No active worksheet found in the workbook"
+                return True, "Worksheet exists"
+            finally:
+                workbook.close()
         except Exception as e:
             return False, f"Error opening workbook: {str(e)}"
 
@@ -28,10 +31,13 @@ class ExcelValidator:
         """Ensures the workbook contains at least one row of data (the header)."""
         try:
             workbook = openpyxl.load_workbook(self.file_path, read_only=True)
-            sheet = workbook.active
-            if sheet.max_row < 1:
-                return False, "Workbook is empty"
-            return True, "Workbook is not empty"
+            try:
+                sheet = workbook.active
+                if sheet.max_row < 1:
+                    return False, "Workbook is empty"
+                return True, "Workbook is not empty"
+            finally:
+                workbook.close()
         except Exception as e:
             return False, f"Error checking workbook: {str(e)}"
 

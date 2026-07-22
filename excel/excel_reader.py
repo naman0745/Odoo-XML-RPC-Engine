@@ -39,3 +39,8 @@ class ExcelReader:
 
             rows.append(row_dict)
         return rows
+
+    def close(self):
+        """Releases the file handle to prevent OS file locks."""
+        if hasattr(self, 'workbook') and self.workbook:
+            self.workbook.close()

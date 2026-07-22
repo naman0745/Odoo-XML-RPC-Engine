@@ -4,8 +4,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from excel.excel_processor import ExcelProcessor
+from filesystem.import_manifest import ImportManifest
+from filesystem.order_fingerprint import generate_fingerprint
 from services.partner_service import AmbiguousVendorError, PartnerService
-from services.product_service import AmbiguousProductError, ProductService
+from services.product_service import (
+    AmbiguousProductError,
+    ProductNotFoundError,
+    ColorNotFoundError,
+    ProductService,
+)
 from services.purchase_order_service import PurchaseOrderService
 from utils.logger import ImportLogger
 
@@ -43,6 +50,7 @@ class ImportResult:
     success: bool
     file_path: str
     order_id: int | None = None
+    duplicate_of: int | None = None
     errors: list[str] = field(default_factory=list)
     row_errors: list[str] = field(default_factory=list)
     rows_processed: int = 0
@@ -97,11 +105,13 @@ class ImportController:
         product_service: ProductService,
         po_service: PurchaseOrderService,
         logger: ImportLogger | None = None,
+        manifest: ImportManifest | None = None,
     ) -> None:
         self._partner_service = partner_service
         self._product_service = product_service
         self._po_service = po_service
         self._logger = logger if logger is not None else ImportLogger()
+        self._manifest = manifest
 
     # ------------------------------------------------------------------
     # Public API
@@ -139,233 +149,316 @@ class ImportController:
         self._logger.info(f"Import started: {Path(file_path).name}")
         processor = ExcelProcessor(file_path)
 
-        # --- Step 1: File-level validation ---
-        ok, errors = processor.validate_file()
-        if not ok:
-            for error in errors:
-                self._logger.error(f"Import failed. Reason: {error}")
-            result = ImportResult(
-                success=False,
-                file_path=file_path,
-                errors=errors,
-            )
-            self._log_summary(result)
-            return result
-        self._logger.info("Reading Excel file.")
-
-        # --- Step 2: Read + map rows ---
-        rows = processor.get_mapped_rows()
-        self._logger.info(f"{len(rows)} data row(s) read from workbook.")
-        if not rows:
-            self._logger.error(
-                "Import failed. Reason: The workbook contains no data rows."
-            )
-            result = ImportResult(
-                success=False,
-                file_path=file_path,
-                errors=["The workbook contains no data rows."],
-            )
-            self._log_summary(result)
-            return result
-
-        # --- Step 3: Validate PO header (once, from first row) ---
-        header_row = rows[0]
-        ok, msg = processor.validate_header(header_row)
-        if not ok:
-            self._logger.error(f"Import failed. Reason: {msg}")
-            result = ImportResult(
-                success=False,
-                file_path=file_path,
-                errors=[f"PO header row is invalid: {msg}"],
-            )
-            self._log_summary(result)
-            return result
-
-        # --- Step 4a: Validate all rows before any Odoo lookup ---
-        pre_lookup_row_errors: list[str] = []
-        pre_lookup_rows_failed = 0
-        for row in rows:
-            row_num = row.get("_row", "?")
-            ok, msg = processor.validate_row(row)
-            if not ok:
-                row_error = f"Row {row_num}: {msg}"
-                self._logger.warning(row_error)
-                pre_lookup_row_errors.append(row_error)
-                pre_lookup_rows_failed += 1
-
-        if pre_lookup_row_errors:
-            self._logger.error(
-                f"Import aborted. {pre_lookup_rows_failed} row(s) failed. "
-                "No PO was created."
-            )
-            vendor_name_early = self._extract_vendor_name(rows)
-            result = ImportResult(
-                success=False,
-                file_path=file_path,
-                errors=[
-                    f"Import aborted - {pre_lookup_rows_failed} row(s) had "
-                    "errors. No Purchase Order was created."
-                ],
-                row_errors=pre_lookup_row_errors,
-                rows_processed=len(rows),
-                rows_failed=pre_lookup_rows_failed,
-            )
-            self._log_summary(result, vendor_name=vendor_name_early)
-            return result
-
-        # --- Step 4b: Resolve vendor ---
-        vendor_name = self._extract_vendor_name(rows)
         try:
-            vendor = self._partner_service.get_vendor(vendor_name)
-        except AmbiguousVendorError as exc:
-            self._logger.error(
-                "Import failed. Multiple vendors matched. "
-                f"Technical details: {exc}"
-            )
-            return ImportResult(
-                success=False,
-                file_path=file_path,
-                errors=[
-                    f"Multiple vendors matched \"{vendor_name}\". "
-                    "Please make the vendor name more specific."
-                ],
-            )
-        except Exception as exc:
-            self._logger.error(
-                "Import failed. Unable to look up vendor in Odoo. "
-                f"Technical details: {exc}"
-            )
-            return ImportResult(
-                success=False,
-                file_path=file_path,
-                errors=[
-                    "Unable to look up the vendor in Odoo. "
-                    "Please try again or contact support."
-                ],
-            )
-        if vendor is None:
-            self._logger.error(
-                f"Import failed. Reason: Vendor \"{vendor_name}\" "
-                "was not found in Odoo."
-            )
-            return ImportResult(
-                success=False,
-                file_path=file_path,
-                errors=[f"Vendor \"{vendor_name}\" was not found in Odoo."],
-            )
-        self._logger.info(f"Vendor found: {vendor_name}.")
-        partner_id: int = vendor["id"]
-
-        # --- Step 5: Build order lines (resolve each row — already validated in Step 4a) ---
-        order_lines: list[dict] = []
-        row_errors: list[str] = []
-        rows_processed = len(rows)
-        rows_failed = 0
-
-        for row in rows:
-            row_num = row.get("_row", "?")
-
-
-            # Product lookup: Vendor Code + Color (never by name)
-            try:
-                product = self._product_service.find_variant(
-                    vendor_code=str(row.get("x_vendor_code") or "").strip(),
-                    Color=str(row.get("attribute_value_ids") or "").strip(),
+            # --- Step 1: File-level validation ---
+            ok, errors = processor.validate_file()
+            if not ok:
+                for error in errors:
+                    self._logger.error(f"Import failed. Reason: {error}")
+                result = ImportResult(
+                    success=False,
+                    file_path=file_path,
+                    errors=errors,
                 )
-            except AmbiguousProductError as exc:
-                vendor_code = row.get("x_vendor_code")
-                color = row.get("attribute_value_ids")
-                self._logger.warning(
-                    f"Row {row_num}: Multiple matching products found. "
+                self._log_summary(result)
+                return result
+            self._logger.info("Reading Excel file.")
+
+            # --- Step 2: Read + map rows ---
+            rows = processor.get_mapped_rows()
+            self._logger.info(f"{len(rows)} data row(s) read from workbook.")
+            if not rows:
+                self._logger.error(
+                    "Import failed. Reason: The workbook contains no data rows."
+                )
+                result = ImportResult(
+                    success=False,
+                    file_path=file_path,
+                    errors=["The workbook contains no data rows."],
+                )
+                self._log_summary(result)
+                return result
+
+            # --- Step 2a: Duplicate detection (fail-safe) ---
+            # This check runs before any Odoo communication.
+            # If fingerprint generation or manifest access fails for ANY reason,
+            # the import is aborted — never silently bypassed.
+            if self._manifest is not None:
+                try:
+                    fingerprint = generate_fingerprint(rows)
+                except Exception as exc:
+                    self._logger.error(
+                        f"Import aborted. Duplicate protection error: "
+                        f"could not generate order fingerprint: {exc}"
+                    )
+                    return ImportResult(
+                        success=False,
+                        file_path=file_path,
+                        errors=[
+                            "Import aborted: duplicate protection could not "
+                            f"generate an order fingerprint ({exc}). "
+                            "Please contact support."
+                        ],
+                    )
+
+                try:
+                    if self._manifest.is_imported(fingerprint):
+                        entry = self._manifest.get_entry(fingerprint)
+                        existing_po_id = entry.get("po_id") if entry else None
+                        msg = (
+                            f"Duplicate import rejected. This Purchase Order was "
+                            f"already imported as PO #{existing_po_id}."
+                            if existing_po_id
+                            else "Duplicate import rejected. This Purchase Order "
+                                "has already been imported."
+                        )
+                        self._logger.warning(msg)
+                        return ImportResult(
+                            success=False,
+                            file_path=file_path,
+                            duplicate_of=existing_po_id,
+                            errors=[msg],
+                        )
+                except RuntimeError as exc:
+                    # Manifest is corrupt or unreadable — abort, do not bypass.
+                    self._logger.error(
+                        f"Import aborted. {exc}"
+                    )
+                    return ImportResult(
+                        success=False,
+                        file_path=file_path,
+                        errors=[str(exc)],
+                    )
+
+            # --- Step 3: Validate PO header (once, from first row) ---
+            header_row = rows[0]
+            ok, msg = processor.validate_header(header_row)
+            if not ok:
+                self._logger.error(f"Import failed. Reason: {msg}")
+                result = ImportResult(
+                    success=False,
+                    file_path=file_path,
+                    errors=[f"PO header row is invalid: {msg}"],
+                )
+                self._log_summary(result)
+                return result
+
+            # --- Step 4a: Validate all rows before any Odoo lookup ---
+            pre_lookup_row_errors: list[str] = []
+            pre_lookup_rows_failed = 0
+            for row in rows:
+                row_num = row.get("_row", "?")
+                ok, msg = processor.validate_row(row)
+                if not ok:
+                    row_error = f"Row {row_num}: {msg}"
+                    self._logger.warning(row_error)
+                    pre_lookup_row_errors.append(row_error)
+                    pre_lookup_rows_failed += 1
+
+            if pre_lookup_row_errors:
+                self._logger.error(
+                    f"Import aborted. {pre_lookup_rows_failed} row(s) failed. "
+                    "No PO was created."
+                )
+                vendor_name_early = self._extract_vendor_name(rows)
+                result = ImportResult(
+                    success=False,
+                    file_path=file_path,
+                    errors=[
+                        f"Import aborted - {pre_lookup_rows_failed} row(s) had "
+                        "errors. No Purchase Order was created."
+                    ],
+                    row_errors=pre_lookup_row_errors,
+                    rows_processed=len(rows),
+                    rows_failed=pre_lookup_rows_failed,
+                )
+                self._log_summary(result, vendor_name=vendor_name_early)
+                return result
+
+            # --- Step 4b: Resolve vendor ---
+            vendor_name = self._extract_vendor_name(rows)
+            try:
+                vendor = self._partner_service.get_vendor(vendor_name)
+            except AmbiguousVendorError as exc:
+                self._logger.error(
+                    "Import failed. Multiple vendors matched. "
                     f"Technical details: {exc}"
                 )
-                row_errors.append(
-                    f"Row {row_num}:\n"
-                    "Multiple matching products were found.\n"
-                    f"Vendor Code: {vendor_code}\n"
-                    f"Color: {color}"
+                return ImportResult(
+                    success=False,
+                    file_path=file_path,
+                    errors=[
+                        f"Multiple vendors matched \"{vendor_name}\". "
+                        "Please make the vendor name more specific."
+                    ],
                 )
-                rows_failed += 1
-                continue
             except Exception as exc:
                 self._logger.error(
-                    f"Row {row_num}: Unable to look up product in Odoo. "
+                    "Import failed. Unable to look up vendor in Odoo. "
                     f"Technical details: {exc}"
                 )
-                row_errors.append(
-                    f"Row {row_num}:\n"
-                    "Unable to look up the product in Odoo."
+                return ImportResult(
+                    success=False,
+                    file_path=file_path,
+                    errors=[
+                        "Unable to look up the vendor in Odoo. "
+                        "Please try again or contact support."
+                    ],
                 )
-                rows_failed += 1
-                continue
-           
-            if product is None:
-                vendor_code = row.get("x_vendor_code")
-                color = row.get("attribute_value_ids")
-                self._logger.warning(
-                    f"Row {row_num}: No matching product found - "
-                    f"Vendor Code: {vendor_code}, Color: {color}"
+            if vendor is None:
+                self._logger.error(
+                    f"Import failed. Reason: Vendor \"{vendor_name}\" "
+                    "was not found in Odoo."
                 )
-                row_errors.append(
-                    f"Row {row_num}:\n"
-                    "No matching product was found.\n"
-                    f"Vendor Code: {vendor_code}\n"
-                    f"Color: {color}"
+                return ImportResult(
+                    success=False,
+                    file_path=file_path,
+                    errors=[f"Vendor \"{vendor_name}\" was not found in Odoo."],
                 )
-                rows_failed += 1
-                continue
+            self._logger.info(f"Vendor found: {vendor_name}.")
+            partner_id: int = vendor["id"]
 
-            order_lines.append(self._build_line(row, product))
+            # --- Step 5: Build order lines (resolve each row — already validated in Step 4a) ---
+            order_lines: list[dict] = []
+            row_errors: list[str] = []
+            rows_processed = len(rows)
+            rows_failed = 0
 
-        # --- Step 6: Abort if any row failed (never create partial POs) ---
-        if row_errors:
+            for row in rows:
+                row_num = row.get("_row", "?")
+
+
+                # Product lookup: Vendor Code + Color (never by name)
+                try:
+                    product = self._product_service.find_variant(
+                        vendor_code=str(row.get("x_vendor_code") or "").strip(),
+                        Color=str(row.get("attribute_value_ids") or "").strip(),
+                    )
+                except AmbiguousProductError as exc:
+                    vendor_code = row.get("x_vendor_code")
+                    color = row.get("attribute_value_ids")
+                    self._logger.warning(
+                        f"Row {row_num}: Multiple matching products found. "
+                        f"Technical details: {exc}"
+                    )
+                    row_errors.append(
+                        f"Row {row_num}:\n"
+                        "Multiple matching products were found.\n"
+                        f"Vendor Code: {vendor_code}\n"
+                        f"Color: {color}"
+                    )
+                    rows_failed += 1
+                    continue
+                except ProductNotFoundError as exc:
+                    vendor_code = row.get("x_vendor_code")
+                    self._logger.warning(
+                        f"Row {row_num}: Product not found - Vendor Code: {vendor_code}"
+                    )
+                    row_errors.append(
+                        f"Row {row_num}:\n"
+                        f"Product not found in Odoo database.\n"
+                        f"Vendor Code: {vendor_code}"
+                    )
+                    rows_failed += 1
+                    continue
+                except ColorNotFoundError as exc:
+                    vendor_code = row.get("x_vendor_code")
+                    color = row.get("attribute_value_ids")
+                    self._logger.warning(
+                        f"Row {row_num}: Color not found - Vendor Code: {vendor_code}, Color: {color}"
+                    )
+                    row_errors.append(
+                        f"Row {row_num}:\n"
+                        f"Vendor Code '{vendor_code}' exists, but Color is missing.\n"
+                        f"Invalid Color: {color}"
+                    )
+                    rows_failed += 1
+                    continue
+                except Exception as exc:
+                    self._logger.error(
+                        f"Row {row_num}: Unable to look up product in Odoo. "
+                        f"Technical details: {exc}"
+                    )
+                    row_errors.append(
+                        f"Row {row_num}:\n"
+                        "Unable to look up the product in Odoo."
+                    )
+                    rows_failed += 1
+                    continue
+
+                order_lines.append(self._build_line(row, product))
+
+            # --- Step 6: Abort if any row failed (never create partial POs) ---
+            if row_errors:
+                result = ImportResult(
+                    success=False,
+                    file_path=file_path,
+                    errors=[
+                        f"Import aborted - {rows_failed} row(s) had errors. "
+                        "No Purchase Order was created."
+                    ],
+                    row_errors=row_errors,
+                    rows_processed=rows_processed,
+                    rows_failed=rows_failed,
+                )
+                self._log_summary(result, vendor_name=vendor_name)
+                return result
+            self._logger.info(f"{len(order_lines)} product(s) validated.")
+
+            # --- Step 7: Create the Purchase Order ---
+            try:
+                order_id = self._po_service.create_order(partner_id, order_lines)
+            except Exception as exc:
+                self._logger.error(
+                    "Import failed. Unable to create the Purchase Order. "
+                    f"Technical details: {exc}"
+                )
+                result = ImportResult(
+                    success=False,
+                    file_path=file_path,
+                    errors=[
+                        "Unable to create the Purchase Order because required "
+                        "information is missing or an Odoo error occurred."
+                    ],
+                    rows_processed=rows_processed,
+                    rows_failed=0,
+                )
+                self._log_summary(result, vendor_name=vendor_name)
+                return result
+
+            # --- Step 8: Success ---
+            self._logger.info(f"Purchase Order #{order_id} created successfully.")
             result = ImportResult(
-                success=False,
+                success=True,
                 file_path=file_path,
-                errors=[
-                    f"Import aborted - {rows_failed} row(s) had errors. "
-                    "No Purchase Order was created."
-                ],
-                row_errors=row_errors,
-                rows_processed=rows_processed,
-                rows_failed=rows_failed,
-            )
-            self._log_summary(result, vendor_name=vendor_name)
-            return result
-        self._logger.info(f"{len(order_lines)} product(s) validated.")
-
-        # --- Step 7: Create the Purchase Order ---
-        try:
-            order_id = self._po_service.create_order(partner_id, order_lines)
-        except Exception as exc:
-            self._logger.error(
-                "Import failed. Unable to create the Purchase Order. "
-                f"Technical details: {exc}"
-            )
-            result = ImportResult(
-                success=False,
-                file_path=file_path,
-                errors=[
-                    "Unable to create the Purchase Order because required "
-                    "information is missing or an Odoo error occurred."
-                ],
+                order_id=order_id,
                 rows_processed=rows_processed,
                 rows_failed=0,
             )
             self._log_summary(result, vendor_name=vendor_name)
+
+            # --- Step 8a: Record fingerprint in manifest ---
+            if self._manifest is not None:
+                try:
+                    self._manifest.record(
+                        fingerprint=fingerprint,
+                        po_id=order_id,
+                        vendor=vendor_name,
+                        filename=Path(file_path).name,
+                    )
+                except RuntimeError as exc:
+                    # The PO was created successfully. Warn but do not mask the
+                    # success — the operator can manually reconcile the manifest.
+                    self._logger.warning(
+                        f"PO #{order_id} was created but could not be recorded "
+                        f"in the import manifest: {exc}. The file may be "
+                        "importable again if the manifest is not repaired."
+                    )
+
             return result
 
-        # --- Step 8: Success ---
-        self._logger.info(f"Purchase Order #{order_id} created successfully.")
-        result = ImportResult(
-            success=True,
-            file_path=file_path,
-            order_id=order_id,
-            rows_processed=rows_processed,
-            rows_failed=0,
-        )
-        self._log_summary(result, vendor_name=vendor_name)
-        return result
+        finally:
+            processor.close()
 
     # ------------------------------------------------------------------
     # Private helpers

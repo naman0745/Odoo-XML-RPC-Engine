@@ -14,6 +14,17 @@ class AmbiguousProductError(ValueError):
             f"Vendor Code='{vendor_code}', Color='{color}': {details}"
         )
 
+class ProductNotFoundError(ValueError):
+    def __init__(self, vendor_code):
+        self.vendor_code = vendor_code
+        super().__init__(f"Vendor Code '{vendor_code}' not found.")
+
+class ColorNotFoundError(ValueError):
+    def __init__(self, vendor_code, color):
+        self.vendor_code = vendor_code
+        self.color = color
+        super().__init__(f"Vendor Code '{vendor_code}' found, but Color '{color}' not found.")
+
 
 class ProductService(BaseService):
 
@@ -94,4 +105,18 @@ class ProductService(BaseService):
         )
         if len(results) > 1:
             raise AmbiguousProductError(vendor_code, Color, results)
-        return results[0] if results else None
+        if results:
+            return results[0]
+
+        # Sequentially check where it failed
+        base_product = self.client.search_read(
+            self.MODEL,
+            domain=[("x_vendor_code", "=", vendor_code)],
+            fields=["id"],
+            limit=1
+        )
+        
+        if base_product:
+            raise ColorNotFoundError(vendor_code, Color)
+        else:
+            raise ProductNotFoundError(vendor_code)

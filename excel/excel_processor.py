@@ -215,3 +215,8 @@ class ExcelProcessor:
         if self._reader is None:
             self._reader = ExcelReader(self.file_path)
         return self._reader
+
+    def close(self) -> None:
+        """Close the underlying ExcelReader to release file locks."""
+        if self._reader is not None:
+            self._reader.close()
