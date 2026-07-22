@@ -83,8 +83,10 @@ class GuiController:
         self.scan_view.on_change_folder = self._change_folder
         self.scan_view.on_theme_toggle = self._toggle_theme
 
-        self.ready_view.on_back_clicked = self.start
         self.ready_view.on_import_clicked = self._start_import
+        self.ready_view.on_back_clicked = self.start
+        self.ready_view.on_prev_clicked = self._handle_prev_file
+        self.ready_view.on_next_clicked = self._handle_next_file
 
         self.success_view.on_back_clicked = self.start
         self.success_view.on_process_next_clicked = self._process_next_file
@@ -237,6 +239,42 @@ class GuiController:
             # Fallback if not on Windows (though UX spec dictates Windows desktop)
             pass
 
+    def _handle_prev_file(self) -> None:
+        """Slide conveyer belt back one file."""
+        if not getattr(self.scan_view, "_current_orders", None) or not self._selected_order:
+            return
+            
+        orders = self.scan_view._current_orders
+        try:
+            curr_idx = orders.index(self._selected_order)
+            if curr_idx > 0:
+                self._selected_order = orders[curr_idx - 1]
+                self.ready_view.set_order(
+                    self._selected_order, 
+                    has_prev=(curr_idx - 1 > 0), 
+                    has_next=True
+                )
+        except ValueError:
+            pass
+            
+    def _handle_next_file(self) -> None:
+        """Slide conveyer belt forward one file."""
+        if not getattr(self.scan_view, "_current_orders", None) or not self._selected_order:
+            return
+            
+        orders = self.scan_view._current_orders
+        try:
+            curr_idx = orders.index(self._selected_order)
+            if curr_idx < len(orders) - 1:
+                self._selected_order = orders[curr_idx + 1]
+                self.ready_view.set_order(
+                    self._selected_order, 
+                    has_prev=True, 
+                    has_next=(curr_idx + 1 < len(orders) - 1)
+                )
+        except ValueError:
+            pass
+
     def _change_folder(self) -> None:
         """Allow user to change the workspace folder."""
         current_path = str(self.workspace.root)
@@ -264,11 +302,19 @@ class GuiController:
         self._selected_order = order
 
     def _handle_ready_to_import(self) -> None:
-        if self._selected_order:
-            self.ready_view.set_order(self._selected_order)
-            self.window.show_view("ready")
+        orders = getattr(self.scan_view, "_current_orders", [])
+        
+        has_prev = False
+        has_next = False
+        if orders and self._selected_order in orders:
+            idx = orders.index(self._selected_order)
+            has_prev = (idx > 0)
+            has_next = (idx < len(orders) - 1)
 
-    def _start_import(self) -> None:
+        self.ready_view.set_order(self._selected_order, has_prev=has_prev, has_next=has_next)
+        self.window.show_view("ready")
+
+    def _start_import(self, custom_mappings: dict = None) -> None:
         """
         Transition to progress state and dispatch the blocking ImportController
         work to a background thread to keep the GUI responsive.
@@ -304,7 +350,7 @@ class GuiController:
         def _worker():
             try:
                 # The backend call is fully synchronous
-                result = self.import_ctrl.import_file(str(target_path))
+                result = self.import_ctrl.import_file(str(target_path), user_mappings=custom_mappings)
                 self.window.after(0, self._on_import_finished, result)
             except Exception as e:
                 self.window.after(0, self._on_import_crashed, e)
@@ -364,6 +410,20 @@ class GuiController:
 
             self.window.show_view("success")
         else:
+            if result.ambiguities:
+                from gui.views.resolution_modal import ResolutionModal
+                ResolutionModal(self.window, result.ambiguities, self._retry_with_mappings)
+                self.failure_view.set_error(
+                    workbook=self._selected_order.filename if self._selected_order else "Unknown",
+                    stage="Resolving Ambiguities",
+                    checked=result.rows_processed,
+                    failed=result.rows_failed,
+                    fatal_error="Ambiguous products detected. Please provide mappings.",
+                    row_errors=result.row_errors
+                )
+                self.window.show_view("failure")
+                return
+
             # Reformat error list for the FailureView
             if result.duplicate_of:
                 primary_error = result.errors[0]
@@ -394,3 +454,8 @@ class GuiController:
             row_errors=[]
         )
         self.window.show_view("failure")
+
+    def _retry_with_mappings(self, mappings: dict) -> None:
+        """Called by the ResolutionModal to resubmit with user mappings."""
+        if self._selected_order:
+            self._start_import(custom_mappings=mappings)

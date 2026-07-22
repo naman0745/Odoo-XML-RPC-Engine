@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Optional
 
-from gui.style import ThemeColors
+from gui.style import get_theme_colors, FONT_REGULAR_12, FONT_BOLD_14
 
 
 class FailureView(ttk.Frame):
@@ -25,7 +25,7 @@ class FailureView(ttk.Frame):
         header = ttk.Frame(container)
         header.pack(fill="x", pady=(0, 24))
         
-        ttk.Label(header, text="⚠", font=("Segoe UI", 32), foreground=ThemeColors["AMBER_WARNING"]).pack(side="left", padx=(0, 16))
+        ttk.Label(header, text="⚠", font=("Segoe UI", 32), foreground=get_theme_colors()["AMBER_WARNING"]).pack(side="left", padx=(0, 16))
         
         title_frame = ttk.Frame(header)
         title_frame.pack(side="left", fill="x", expand=True)
@@ -33,15 +33,15 @@ class FailureView(ttk.Frame):
         self.workbook_lbl = ttk.Label(title_frame, text="Workbook: Unknown", style="Muted.TLabel")
         self.workbook_lbl.pack(anchor="w")
 
-        # Summary Frame
-        self.summary_frame = tk.Frame(container, bg=ThemeColors["BG_SURFACE"], highlightbackground=ThemeColors["BORDER_SLATE"], highlightthickness=1)
+        # Summary Card (ttk natively styled)
+        self.summary_frame = ttk.Frame(container, style="Card.TFrame")
         self.summary_frame.pack(fill="x", pady=(0, 16), ipadx=16, ipady=8)
         
-        self.stage_lbl = ttk.Label(self.summary_frame, text="Stage: Validating Data", style="Bold.TLabel", background=ThemeColors["BG_SURFACE"])
-        self.stage_lbl.pack(anchor="w")
-        
-        self.summary_lbl = ttk.Label(self.summary_frame, text="0 Rows Checked · 0 Rows Failed", style="Muted.TLabel", background=ThemeColors["BG_SURFACE"])
-        self.summary_lbl.pack(anchor="w")
+        self.stage_lbl = ttk.Label(self.summary_frame, text="Stage: Validating Data", style="CardTitle.TLabel")
+        self.stage_lbl.pack(anchor="w", padx=24, pady=(24, 4))
+
+        self.summary_lbl = ttk.Label(self.summary_frame, text="0 Rows Checked · 0 Rows Failed", style="CardMeta.TLabel")
+        self.summary_lbl.pack(anchor="w", padx=24, pady=(0, 24))
 
         # Scrollable Error List
         list_container = ttk.Frame(container)
@@ -49,16 +49,19 @@ class FailureView(ttk.Frame):
         
         ttk.Label(list_container, text="Validation Details:", style="Bold.TLabel").pack(anchor="w", pady=(0, 4))
         
+        self.error_text_container = ttk.Frame(list_container, style="Card.TFrame")
+        self.error_text_container.pack(fill="both", expand=True)
+        
         self.error_text = tk.Text(
-            list_container, wrap="word", font=("Segoe UI", 10), 
-            bg=ThemeColors["BG_SURFACE"], fg=ThemeColors["FG_MAIN"],
-            relief="flat", highlightbackground=ThemeColors["BORDER_SLATE"], highlightthickness=1,
-            padx=12, pady=12
+            self.error_text_container, wrap="word", font=FONT_REGULAR_12, 
+            bg=get_theme_colors()["BG_SURFACE"], fg=get_theme_colors()["FG_MAIN"],
+            relief="flat", highlightthickness=0,
+            height=12, state="disabled"
         )
-        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=self.error_text.yview)
+        scrollbar = ttk.Scrollbar(self.error_text_container, orient="vertical", command=self.error_text.yview)
         self.error_text.configure(yscrollcommand=scrollbar.set)
         
-        self.error_text.pack(side="left", fill="both", expand=True)
+        self.error_text.pack(side="left", fill="both", expand=True, padx=12, pady=12)
         scrollbar.pack(side="right", fill="y")
         
         # Technical Details Toggle
@@ -66,9 +69,10 @@ class FailureView(ttk.Frame):
         self.tech_btn.pack(anchor="w", pady=(16, 8))
         self.tech_btn.bind("<Button-1>", self._toggle_tech)
         
-        self.tech_details_frame = tk.Frame(container, bg=ThemeColors["BG_SURFACE"], highlightbackground=ThemeColors["BORDER_SLATE"], highlightthickness=1)
-        self.tech_code_lbl = ttk.Label(self.tech_details_frame, text="", style="MonoMuted.TLabel", background=ThemeColors["BG_SURFACE"])
-        self.tech_code_lbl.pack(anchor="w", padx=12, pady=8)
+        # Technical Details Card
+        self.tech_details_frame = ttk.Frame(container, style="Card.TFrame")
+        self.tech_code_lbl = ttk.Label(self.tech_details_frame, text="", style="MonoMuted.TLabel")
+        self.tech_code_lbl.pack(fill="x", padx=24, pady=16)
 
         ttk.Label(container, text="ⓘ Workbook remains in Incoming Orders — please correct the errors and try again.", style="Muted.TLabel").pack(anchor="w", pady=(8, 16))
 
@@ -97,8 +101,10 @@ class FailureView(ttk.Frame):
         
         self.error_text.configure(state="normal")
         self.error_text.delete("1.0", tk.END)
-        self.error_text.tag_config("bold", font=("Segoe UI", 11, "bold"))
-        self.error_text.tag_config("muted", foreground=ThemeColors["FG_MUTED"])
+        self.error_text.tag_config("bold", font=FONT_BOLD_14)
+        c = get_theme_colors()
+        self.error_text.tag_config("muted", foreground=c["FG_MUTED"])
+        self.error_text.configure(bg=c["BG_SURFACE"], fg=c["FG_MAIN"])
         
         if not row_errors:
             clean_err = fatal_error

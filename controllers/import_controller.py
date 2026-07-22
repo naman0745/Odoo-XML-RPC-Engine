@@ -53,6 +53,7 @@ class ImportResult:
     duplicate_of: int | None = None
     errors: list[str] = field(default_factory=list)
     row_errors: list[str] = field(default_factory=list)
+    ambiguities: list[dict] = field(default_factory=list)
     rows_processed: int = 0
     rows_failed: int = 0
 
@@ -117,7 +118,7 @@ class ImportController:
     # Public API
     # ------------------------------------------------------------------
 
-    def import_file(self, file_path: str) -> ImportResult:
+    def import_file(self, file_path: str, user_mappings: dict = None) -> ImportResult:
         """
         Run the full import pipeline for a single Excel workbook.
 
@@ -139,6 +140,9 @@ class ImportController:
         ----------
         file_path : str
             Path to the ``.xlsx`` workbook to import.
+        user_mappings : dict
+            Optional dictionary mapping faulty vendor codes to exact Odoo products
+            resolved by the user via the Ambiguity UI.
 
         Returns
         -------
@@ -321,57 +325,65 @@ class ImportController:
             # --- Step 5: Build order lines (resolve each row — already validated in Step 4a) ---
             order_lines: list[dict] = []
             row_errors: list[str] = []
+            ambiguities: list[dict] = []
             rows_processed = len(rows)
             rows_failed = 0
 
             for row in rows:
                 row_num = row.get("_row", "?")
+                vendor_code = str(row.get("x_vendor_code") or "").strip()
+                color = str(row.get("attribute_value_ids") or "").strip()
+                
+                mapping_key = f"{vendor_code}::{color}" if color else vendor_code
 
+                # 1. Check user mappings first to override lookup
+                if user_mappings and mapping_key in user_mappings:
+                    product = user_mappings[mapping_key]
+                    order_lines.append(self._build_line(row, product))
+                    continue
 
-                # Product lookup: Vendor Code + Color (never by name)
+                # 2. Product lookup: Vendor Code + Color (never by name)
                 try:
-                    product = self._product_service.find_variant(
-                        vendor_code=str(row.get("x_vendor_code") or "").strip(),
-                        Color=str(row.get("attribute_value_ids") or "").strip(),
-                    )
+                    product = self._product_service.find_variant(vendor_code, color)
                 except AmbiguousProductError as exc:
-                    vendor_code = row.get("x_vendor_code")
-                    color = row.get("attribute_value_ids")
                     self._logger.warning(
-                        f"Row {row_num}: Multiple matching products found. "
-                        f"Technical details: {exc}"
+                        f"Row {row_num}: Multiple EXACT matching products found. Triggering resolution UI."
                     )
+                    ambiguities.append({
+                        "row": row_num,
+                        "original_code": vendor_code,
+                        "color": color,
+                        "mapping_key": mapping_key,
+                        "candidates": exc.matches
+                    })
                     row_errors.append(
                         f"Row {row_num}:\n"
-                        "Multiple matching products were found.\n"
-                        f"Vendor Code: {vendor_code}\n"
-                        f"Color: {color}"
+                        "Multiple matching products were found in Odoo. Please map manually."
                     )
                     rows_failed += 1
                     continue
-                except ProductNotFoundError as exc:
-                    vendor_code = row.get("x_vendor_code")
-                    self._logger.warning(
-                        f"Row {row_num}: Product not found - Vendor Code: {vendor_code}"
-                    )
-                    row_errors.append(
-                        f"Row {row_num}:\n"
-                        f"Product not found in Odoo database.\n"
-                        f"Vendor Code: {vendor_code}"
-                    )
-                    rows_failed += 1
-                    continue
-                except ColorNotFoundError as exc:
-                    vendor_code = row.get("x_vendor_code")
-                    color = row.get("attribute_value_ids")
-                    self._logger.warning(
-                        f"Row {row_num}: Color not found - Vendor Code: {vendor_code}, Color: {color}"
-                    )
-                    row_errors.append(
-                        f"Row {row_num}:\n"
-                        f"Vendor Code '{vendor_code}' exists, but Color is missing.\n"
-                        f"Invalid Color: {color}"
-                    )
+                except (ProductNotFoundError, ColorNotFoundError) as exc:
+                    self._logger.warning(f"Row {row_num}: Exact match failed - Vendor: {vendor_code}, Color: {color}")
+                    
+                    candidates = self._product_service.search_similar_products(vendor_code, color)
+                    if candidates:
+                        ambiguities.append({
+                            "row": row_num,
+                            "original_code": vendor_code,
+                            "color": color,
+                            "mapping_key": mapping_key,
+                            "candidates": candidates
+                        })
+                        row_errors.append(
+                            f"Row {row_num}:\n"
+                            f"Product not found exactly, but {len(candidates)} similar products exist."
+                        )
+                    else:
+                        row_errors.append(
+                            f"Row {row_num}:\n"
+                            f"Product not found in Odoo database.\n"
+                            f"Vendor Code: {vendor_code}   Color: {color}"
+                        )
                     rows_failed += 1
                     continue
                 except Exception as exc:
@@ -398,6 +410,7 @@ class ImportController:
                         "No Purchase Order was created."
                     ],
                     row_errors=row_errors,
+                    ambiguities=ambiguities,
                     rows_processed=rows_processed,
                     rows_failed=rows_failed,
                 )
@@ -533,12 +546,13 @@ class ImportController:
         Returns
         -------
         dict
-            Keys: ``product_id``, ``name``, ``product_qty``,
+            Keys: ``product_id``, ``name``, ``x_color``, ``product_qty``,
             ``price_unit``, ``date_planned``, ``product_uom``.
         """
         return {
             "product_id": product["id"],
             "name": str(row.get("x_vendor_code") or ""),
+            "x_color": str(row.get("attribute_value_ids") or "").strip(),
             "product_qty": float(row.get("product_qty") or 0),
             "price_unit": float(row.get("price_unit") or 0),
             "date_planned": str(row.get("date_planned") or ""),

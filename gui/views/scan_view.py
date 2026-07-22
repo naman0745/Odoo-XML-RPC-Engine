@@ -7,6 +7,7 @@ from typing import Callable, Optional
 
 from gui.models.ui_models import PendingOrderInfo
 from gui.widgets.order_card import OrderCard
+from gui.style import FONT_H1_40
 
 
 class ScanView(ttk.Frame):
@@ -67,17 +68,12 @@ class ScanView(ttk.Frame):
 
         self._selected_order: Optional[PendingOrderInfo] = None
         self._cards: list[OrderCard] = []
-
-        # Action Button (Import)
-        self.import_btn = ttk.Button(self, text="Import Purchase Order", style="Primary.TButton", state="disabled")
-        # Use typical ttk command for buttons
-        self.import_btn.configure(command=self._handle_import_click)
-        self.import_btn.pack(pady=24)
+        self._current_orders: list[PendingOrderInfo] = []
 
     def load_files(self, orders: list[PendingOrderInfo], last_scanned: str, incoming_path: str = "") -> None:
         """Populate the view with order data."""
         self._selected_order = None
-        self.import_btn.configure(state="disabled")
+        self._current_orders = orders
 
         # Clear existing cards / empty state contents
         for widget in self.content_frame.winfo_children():
@@ -94,11 +90,14 @@ class ScanView(ttk.Frame):
 
         if count == 0:
             self._render_empty_state(incoming_path)
-            self.import_btn.pack_forget() # Hide import button entirely in empty state
         else:
-            self.import_btn.pack(pady=24) # Ensure it is visible
             for order in orders:
-                card = OrderCard(self.content_frame, order, self._handle_card_click)
+                card = OrderCard(
+                    self.content_frame, 
+                    order, 
+                    self._handle_card_click, 
+                    self._handle_import_click
+                )
                 card.pack(fill="x", pady=(0, 8))
                 self._cards.append(card)
 
@@ -111,7 +110,7 @@ class ScanView(ttk.Frame):
         center = ttk.Frame(self.content_frame)
         center.place(relx=0.5, rely=0.4, anchor="center")
 
-        ttk.Label(center, text="📂", font=("Segoe UI", 40)).pack(pady=(0, 16))
+        ttk.Label(center, text="📂", font=FONT_H1_40).pack(pady=(0, 16))
         ttk.Label(center, text="No pending purchase orders found.", style="Bold.TLabel").pack()
         ttk.Label(center, text="Add Excel workbooks to the Incoming Orders folder to begin.", style="Muted.TLabel").pack(pady=8)
         
@@ -145,7 +144,7 @@ class ScanView(ttk.Frame):
             card.set_selected(False)
         clicked_card.set_selected(True)
         self._selected_order = order
-        self.import_btn.configure(state="normal")
+        
         if self.on_order_selected:
             self.on_order_selected(order)
 

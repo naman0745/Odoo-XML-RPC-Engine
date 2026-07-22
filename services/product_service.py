@@ -120,3 +120,23 @@ class ProductService(BaseService):
             raise ColorNotFoundError(vendor_code, Color)
         else:
             raise ProductNotFoundError(vendor_code)
+
+    def search_similar_products(self, vendor_code: str, color: str, limit: int = 5) -> list[dict]:
+        """
+        Perform a combined fuzzy search against Odoo's x_vendor_code and color.
+        """
+        domain = []
+        if vendor_code:
+            domain.append(("x_vendor_code", "ilike", vendor_code))
+        if color:
+            domain.append(("attribute_value_ids", "ilike", color))
+            
+        if not domain:
+            return []
+            
+        return self.client.search_read(
+            self.MODEL,
+            domain=domain,
+            fields=["id", "name", "x_vendor_code", "uom_id"],
+            limit=limit
+        )

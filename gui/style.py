@@ -18,9 +18,9 @@ FONT_BOLD_16    = ("Segoe UI", 13, "bold")
 FONT_BOLD_20    = ("Segoe UI", 16, "bold")
 FONT_MONO_12    = ("Consolas", 10)
 FONT_MONO_14    = ("Consolas", 11)
+FONT_H1_40      = ("Segoe UI", 40)
 
-# Active Theme Color Palette
-ThemeColors = {
+LIGHT_PALETTE = {
     "BG_MAIN": "#FFFFFF",
     "BG_SURFACE": "#F8FAFC",
     "FG_MAIN": "#334155",
@@ -34,40 +34,38 @@ ThemeColors = {
     "RED_FAILED": "#DC2626"
 }
 
+DARK_PALETTE = {
+    "BG_MAIN": "#0D0D0D",        
+    "BG_SURFACE": "#1E1E1E",     
+    "FG_MAIN": "#E0E0E0",        
+    "FG_MUTED": "#9E9E9E",       
+    "BORDER_SLATE": "#333333",   
+    "ACCENT_BLUE": "#4DA3FF",    
+    "ACCENT_BLUE_HOVER": "#6EB5FF",
+    "ACCENT_TINT": "#1A3A5C",    
+    "GREEN_ACCENT": "#69DB7C",   
+    "AMBER_WARNING": "#FFB74D",
+    "RED_FAILED": "#EF5350"
+}
+
+def get_theme_colors() -> dict:
+    """Return current theme palette."""
+    return DARK_PALETTE if AppConfig().get_theme() == "dark" else LIGHT_PALETTE
+
+_theme_listeners = []
+
+def register_theme_listener(callback) -> None:
+    """Register a UI component to automatically refresh when the theme switches."""
+    _theme_listeners.append(callback)
+
+def unregister_theme_listener(callback) -> None:
+    if callback in _theme_listeners:
+        _theme_listeners.remove(callback)
+
 def apply_styles(root: tk.Tk) -> None:
     """Configure all ttk styles for the application based on AppConfig theme."""
-    theme_name = AppConfig().get_theme()
+    ThemeColors = get_theme_colors()
     
-    # Define Palette dynamically
-    if theme_name == "dark":
-        ThemeColors.update({
-            "BG_MAIN": "#0F172A",
-            "BG_SURFACE": "#1E293B",
-            "FG_MAIN": "#F8FAFC",
-            "FG_MUTED": "#94A3B8",
-            "BORDER_SLATE": "#334155",
-            "ACCENT_BLUE": "#3B82F6",
-            "ACCENT_BLUE_HOVER": "#2563EB",
-            "ACCENT_TINT": "#1E3A8A", # dark blue tint
-            "GREEN_ACCENT": "#22C55E",
-            "AMBER_WARNING": "#F59E0B",
-            "RED_FAILED": "#EF4444"
-        })
-    else:
-        ThemeColors.update({
-            "BG_MAIN": "#FFFFFF",
-            "BG_SURFACE": "#F8FAFC",
-            "FG_MAIN": "#334155",
-            "FG_MUTED": "#64748B",
-            "BORDER_SLATE": "#475569",
-            "ACCENT_BLUE": "#2563EB",
-            "ACCENT_BLUE_HOVER": "#1D4ED8",
-            "ACCENT_TINT": "#EBF2FF",
-            "GREEN_ACCENT": "#16A34A",
-            "AMBER_WARNING": "#D97706",
-            "RED_FAILED": "#DC2626"
-        })
-        
     BG_MAIN = ThemeColors["BG_MAIN"]
     BG_SURFACE = ThemeColors["BG_SURFACE"]
     FG_MAIN = ThemeColors["FG_MAIN"]
@@ -86,14 +84,16 @@ def apply_styles(root: tk.Tk) -> None:
     if 'clam' in style.theme_names():
          style.theme_use('clam')
     
-    # -------------------------------------------------------------
     # Global Defaults
-    # -------------------------------------------------------------
     style.configure(".", background=BG_MAIN, foreground=FG_MAIN, font=FONT_REGULAR_14)
     
     # Structural frames
     style.configure("TFrame", background=BG_MAIN)
     style.configure("Surface.TFrame", background=BG_SURFACE)
+    
+    # Selected Cards
+    style.configure("Selected.TFrame", background=ThemeColors["ACCENT_TINT"])
+    
     style.configure("TLabel", background=BG_MAIN, foreground=FG_MAIN)
     
     # Special Purpose Labels
@@ -112,9 +112,7 @@ def apply_styles(root: tk.Tk) -> None:
     style.configure("Footer.TFrame", background=BG_MAIN)
     style.configure("Footer.TLabel", foreground=FG_MUTED, font=FONT_REGULAR_12, background=BG_MAIN)
     
-    # -------------------------------------------------------------
     # Buttons
-    # -------------------------------------------------------------
     style.configure(
         "Primary.TButton", 
         background=ACCENT_BLUE, 
@@ -149,6 +147,194 @@ def apply_styles(root: tk.Tk) -> None:
         font=FONT_REGULAR_14
     )
     
-    # Progress Bar Formats
-    style.configure("TProgressbar", thickness=4, background=ACCENT_BLUE, troughcolor=BG_SURFACE)
+    style.configure(
+        "ChecklistIcon.Active.TLabel",
+        background=BG_MAIN,
+        foreground=ACCENT_BLUE,
+        font=("Segoe UI", 12)
+    )
+    style.configure(
+        "ChecklistIcon.Complete.TLabel",
+        background=BG_MAIN,
+        foreground=GREEN_ACCENT,
+        font=("Segoe UI", 12)
+    )
+    style.configure(
+        "ChecklistIcon.Failed.TLabel",
+        background=BG_MAIN,
+        foreground=RED_FAILED,
+        font=("Segoe UI", 12)
+    )
+
+    style.configure(
+        "ChecklistText.TLabel",
+        background=BG_MAIN,
+        foreground=FG_MUTED,
+        font=("Segoe UI", 12)
+    )
+    style.configure(
+        "ChecklistText.Active.TLabel",
+        background=BG_MAIN,
+        foreground=ACCENT_BLUE,
+        font=("Segoe UI", 12)
+    )
+    style.configure(
+        "ChecklistText.Complete.TLabel",
+        background=BG_MAIN,
+        foreground=FG_MAIN,
+        font=("Segoe UI", 12)
+    )
+    style.configure(
+        "ChecklistText.Failed.TLabel",
+        background=BG_MAIN,
+        foreground=RED_FAILED,
+        font=("Segoe UI", 12)
+    )
+
+    # -------------------------------------------------------------
+    # Success / Failure View Styles
+    # -------------------------------------------------------------
+    style.configure(
+        "SuccessIcon.TLabel",
+        background=BG_MAIN,
+        foreground=GREEN_ACCENT,
+        font=("Segoe UI", 32)
+    )
+    style.configure(
+        "Card.TFrame",
+        background=BG_SURFACE,
+        borderwidth=1,
+        relief="solid",
+        bordercolor=BORDER_SLATE
+    )
+    style.configure(
+        "CardTitle.TLabel",
+        background=BG_SURFACE,
+        foreground=FG_MAIN,
+        font=FONT_BOLD_14
+    )
+    style.configure(
+        "CardMeta.TLabel",
+        background=BG_SURFACE,
+        foreground=FG_MUTED,
+        font=FONT_REGULAR_12
+    )
+    style.configure(
+        "CardMeta.Success.TLabel",
+        background=BG_SURFACE,
+        foreground=GREEN_ACCENT,
+        font=FONT_REGULAR_12
+    )
+    style.configure(
+        "CardMeta.Error.TLabel",
+        background=BG_SURFACE,
+        foreground=RED_FAILED,
+        font=FONT_REGULAR_12
+    )
+    style.configure(
+        "POId.TLabel",
+        background=BG_MAIN,
+        foreground=ACCENT_BLUE,
+        font=("Consolas", 14, "bold")
+    )
+
+    # -------------------------------------------------------------
+    # Checklist Widget Styles
+    # -------------------------------------------------------------
+    style.configure(
+        "ChecklistIcon.TLabel",
+        background=BG_MAIN,
+        foreground=FG_MUTED,
+        font=("Segoe UI", 12)
+    )
+    style.configure(
+        "ChecklistIcon.Active.TLabel",
+        background=BG_MAIN,
+        foreground=ACCENT_BLUE,
+        font=("Segoe UI", 12)
+    )
+    style.configure(
+        "ChecklistIcon.Complete.TLabel",
+        background=BG_MAIN,
+        foreground=GREEN_ACCENT,
+        font=("Segoe UI", 12)
+    )
+    style.configure(
+        "ChecklistIcon.Failed.TLabel",
+        background=BG_MAIN,
+        foreground=RED_FAILED,
+        font=("Segoe UI", 12)
+    )
+
+    style.configure(
+        "ChecklistText.TLabel",
+        background=BG_MAIN,
+        foreground=FG_MUTED,
+        font=("Segoe UI", 12)
+    )
+    style.configure(
+        "ChecklistText.Active.TLabel",
+        background=BG_MAIN,
+        foreground=ACCENT_BLUE,
+        font=("Segoe UI", 12)
+    )
+    style.configure(
+        "ChecklistText.Complete.TLabel",
+        background=BG_MAIN,
+        foreground=FG_MAIN,
+        font=("Segoe UI", 12)
+    )
+    style.configure(
+        "ChecklistText.Failed.TLabel",
+        background=BG_MAIN,
+        foreground=RED_FAILED,
+        font=("Segoe UI", 12)
+    )
+
+    # -------------------------------------------------------------
+    # Success / Failure View Styles
+    # -------------------------------------------------------------
+    style.configure(
+        "SuccessIcon.TLabel",
+        background=BG_MAIN,
+        foreground=GREEN_ACCENT,
+        font=("Segoe UI", 32)
+    )
+    style.configure(
+        "Card.TFrame",
+        background=BG_SURFACE,
+        borderwidth=1,
+        relief="solid",
+        bordercolor=BORDER_SLATE
+    )
+    style.configure(
+        "CardTitle.TLabel",
+        background=BG_SURFACE,
+        foreground=FG_MAIN,
+        font=FONT_BOLD_14
+    )
+    style.configure(
+        "CardMeta.TLabel",
+        background=BG_SURFACE,
+        foreground=FG_MUTED,
+        font=FONT_REGULAR_12
+    )
+    style.configure(
+        "CardMeta.Success.TLabel",
+        background=BG_SURFACE,
+        foreground=GREEN_ACCENT,
+        font=FONT_REGULAR_12
+    )
+    style.configure(
+        "CardMeta.Error.TLabel",
+        background=BG_SURFACE,
+        foreground=RED_FAILED,
+        font=FONT_REGULAR_12
+    )
+    style.configure(
+        "POId.TLabel",
+        background=BG_MAIN,
+        foreground=ACCENT_BLUE,
+        font=("Consolas", 14, "bold")
+    )
 

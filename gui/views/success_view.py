@@ -5,8 +5,6 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Optional
 
-from gui.style import ThemeColors
-
 
 class SuccessView(ttk.Frame):
     def __init__(self, parent: tk.Widget) -> None:
@@ -21,34 +19,34 @@ class SuccessView(ttk.Frame):
 
         header = ttk.Frame(container)
         header.pack(fill="x", pady=(0, 24))
-        
-        ttk.Label(header, text="✓", font=("Segoe UI", 32), foreground=ThemeColors["GREEN_ACCENT"]).pack(side="left", padx=(0, 16))
-        
+
+        ttk.Label(header, text="✓", style="SuccessIcon.TLabel").pack(side="left", padx=(0, 16))
+
         title_frame = ttk.Frame(header)
         title_frame.pack(side="left", fill="x", expand=True)
         ttk.Label(title_frame, text="Purchase Order Created", style="H1.TLabel").pack(anchor="w")
-        self.po_id_lbl = ttk.Label(title_frame, text="PO00000", font=("Consolas", 14, "bold"), foreground=ThemeColors["ACCENT_BLUE"])
+        self.po_id_lbl = ttk.Label(title_frame, text="PO00000", style="POId.TLabel")
         self.po_id_lbl.pack(anchor="w")
 
-        self.summary_frame = tk.Frame(container, bg=ThemeColors["BG_SURFACE"], highlightbackground=ThemeColors["BORDER_SLATE"], highlightthickness=1)
+        self.summary_frame = ttk.Frame(container, style="Card.TFrame")
         self.summary_frame.pack(fill="x", pady=(0, 24), ipadx=16, ipady=16)
-        
+
         # Grid layout for summary
-        self.workbook_lbl = ttk.Label(self.summary_frame, text="Workbook: Unknown", style="Bold.TLabel", background=ThemeColors["BG_SURFACE"])
+        self.workbook_lbl = ttk.Label(self.summary_frame, text="Workbook: Unknown", style="CardTitle.TLabel")
         self.workbook_lbl.grid(row=0, column=0, sticky="w", pady=(0, 8))
-        
-        self.rows_lbl = ttk.Label(self.summary_frame, text="Rows Imported: 0", style="Muted.TLabel", background=ThemeColors["BG_SURFACE"])
+
+        self.rows_lbl = ttk.Label(self.summary_frame, text="Rows Imported: 0", style="CardMeta.TLabel")
         self.rows_lbl.grid(row=1, column=0, sticky="w", pady=(0, 4))
-        
-        self.time_lbl = ttk.Label(self.summary_frame, text="Time Taken: < 1s", style="Muted.TLabel", background=ThemeColors["BG_SURFACE"])
+
+        self.time_lbl = ttk.Label(self.summary_frame, text="Time Taken: < 1s", style="CardMeta.TLabel")
         self.time_lbl.grid(row=2, column=0, sticky="w", pady=(0, 4))
 
-        self.move_lbl = ttk.Label(self.summary_frame, text="File Moved: Processed Orders", foreground=ThemeColors["GREEN_ACCENT"], background=ThemeColors["BG_SURFACE"])
+        self.move_lbl = ttk.Label(self.summary_frame, text="File Moved: Processed Orders", style="CardMeta.Success.TLabel")
         self.move_lbl.grid(row=3, column=0, sticky="w", pady=(12, 0))
 
         btn_frame = ttk.Frame(container)
         btn_frame.pack(anchor="w")
-        
+
         self.action_btn = ttk.Button(btn_frame, text="Back to Order List", style="Secondary.TButton")
         self.action_btn.configure(command=self._handle_back)
         self.action_btn.pack(side="left")
@@ -60,9 +58,9 @@ class SuccessView(ttk.Frame):
         self.time_lbl.configure(text=f"Time Taken: {time_taken}")
         self.move_lbl.configure(
             text=f"File Status: {move_status}",
-            foreground=ThemeColors["GREEN_ACCENT"] if move_success else "#E53E3E"
+            style="CardMeta.Success.TLabel" if move_success else "CardMeta.Error.TLabel"
         )
-        
+
     def set_pending_count(self, count: int) -> None:
         if count > 0:
             self.action_btn.configure(
