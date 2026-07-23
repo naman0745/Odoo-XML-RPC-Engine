@@ -26,6 +26,6 @@ Processed Orders/
 *.log
 logs/
 
-documents/
+/documents/
 
 Build.spec
