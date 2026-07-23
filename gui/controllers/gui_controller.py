@@ -9,6 +9,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from typing import Optional, Callable
+
+from connection.auth_manager import AuthenticationManager, AuthenticatedContext
+from connection.exceptions import OdooConnectionError, AuthenticationExpiredError, ConnectionLostError
 from controllers.import_controller import ImportController, ImportResult
 from filesystem.folder_scanner import FolderScanner
 from filesystem.workspace_manager import WorkspaceManager
@@ -17,7 +21,6 @@ from gui.main_window import MainWindow
 from gui.models.ui_models import PendingOrderInfo
 from gui.views.failure_view import FailureView
 from gui.views.progress_view import ProgressView
-from gui.views.ready_view import ReadyView
 from gui.views.scan_view import ScanView
 from gui.views.success_view import SuccessView
 from gui.views.settings_modal import SettingsModal
@@ -38,65 +41,80 @@ class GuiController:
         main_window: MainWindow, 
         workspace: WorkspaceManager,
         scanner: FolderScanner,
-        import_ctrl: Optional[ImportController],
-        is_connected: bool,
-        file_manager: FileManager
+        file_manager: FileManager,
+        auth_manager: AuthenticationManager,
+        on_auth_success: Callable[[AuthenticatedContext], None]
     ) -> None:
         self.window = main_window
         self.workspace = workspace
         self.scanner = scanner
-        self.import_ctrl = import_ctrl
-        self.is_connected = is_connected
         self.file_manager = file_manager
+        self.auth_manager = auth_manager
+        self.on_auth_success = on_auth_success
+        
+        # Domain dependencies are resolved post-authentication
+        self.import_ctrl = None
+        self.is_connected = False
         
         # Instantiate views
+        from gui.views.login_view import LoginView
+        self.login_view = LoginView(self.window.content_container)
         self.scan_view = ScanView(self.window.content_container)
-        self.ready_view = ReadyView(self.window.content_container)
         self.progress_view = ProgressView(self.window.content_container)
         self.success_view = SuccessView(self.window.content_container)
         self.failure_view = FailureView(self.window.content_container)
 
         self.window.register_views(
+            self.login_view,
             self.scan_view, 
-            self.ready_view, 
             self.progress_view, 
             self.success_view, 
             self.failure_view
         )
 
         # Update initial connection status in the header
-        self.window.header.set_connection_status(is_connected, errored=False)
+        self.window.header.set_connection_status(self.is_connected, errored=False)
 
         # Wire up event hooks
         self._bind_events()
         self.window.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
         # State
-        self._selected_order: Optional[PendingOrderInfo] = None
+        self._batch_queue: list[PendingOrderInfo] = []
+        self._batch_results: list[dict] = []
+        self._batch_total: int = 0
+        self._current_processing_order: Optional[PendingOrderInfo] = None
         self._is_importing: bool = False
 
+    def inject_authenticated_services(self, import_ctrl: ImportController) -> None:
+        """
+        Populate the controller with its primary domain dependency post-login.
+        Transitions the UI state to connected.
+        """
+        self.import_ctrl = import_ctrl
+        self.is_connected = True
+        self.window.header.set_connection_status(True, errored=False)
+
+
     def _bind_events(self) -> None:
-        self.scan_view.on_order_selected = self._handle_order_selected
+        self.login_view.on_login = self._attempt_login
+        
+        self.scan_view.on_selection_changed = None # unused locally
         self.scan_view.on_refresh = self._handle_refresh
-        self.scan_view.on_import_clicked = self._handle_ready_to_import
+        self.scan_view.on_process_clicked = self._start_batch_import
         self.scan_view.on_open_folder = self._open_incoming_folder
         self.scan_view.on_change_folder = self._change_folder
-        self.scan_view.on_theme_toggle = self._toggle_theme
-
-        self.ready_view.on_import_clicked = self._start_import
-        self.ready_view.on_back_clicked = self.start
-        self.ready_view.on_prev_clicked = self._handle_prev_file
-        self.ready_view.on_next_clicked = self._handle_next_file
 
         self.success_view.on_back_clicked = self.start
-        self.success_view.on_process_next_clicked = self._process_next_file
+        self.success_view.on_view_failure = self._handle_drill_down_failure
         
-        # For failures, we can go back to start, retry, or open in Excel
-        self.failure_view.on_retry_clicked = self._start_import
+        # For fatal failures blocking the sequence
+        self.failure_view.on_retry_clicked = self.start
         self.failure_view.on_back_clicked = self.start
         self.failure_view.on_open_excel_clicked = self._open_failed_file_in_excel
 
         # Global Config Actions
+        self.window.header._status_lbl.bind("<Button-1>", self._handle_logout_click)
         self.window.header._gear_btn.bind("<Button-1>", lambda e: self._open_settings())
         self.window.status_bar._conf_lbl.bind("<Button-1>", lambda e: self._open_settings())
         self.window.status_bar._log_lbl.bind("<Button-1>", lambda e: self._open_log_file())
@@ -131,31 +149,46 @@ class GuiController:
         apply_styles(self.window)
 
     def _open_failed_file_in_excel(self) -> None:
-        if getattr(self, '_selected_order', None) and self._selected_order.full_path:
+        """Opens the physically targeted file in Excel for manual corrections."""
+        order_to_open = getattr(self, '_current_error_order', None) or getattr(self, '_selected_order', None)
+        
+        if order_to_open and order_to_open.full_path:
+            import os
             try:
-                os.startfile(str(self._selected_order.full_path))
+                os.startfile(order_to_open.full_path)
             except Exception:
                 # Silently catch OS errors if there's no handler or if it fails
                 pass
 
-    def _process_next_file(self) -> None:
-        """Invoked from Success view to seamlessly jump into the next Ready state."""
-        pending_paths = self.scanner.get_pending_files()
+    def _handle_drill_down_failure(self, args: list) -> None:
+        """Route to FailureView dynamically, modifying the Back button to bounce to SuccessView."""
+        result, order = args
         
-        if not pending_paths:
-            self.start()
-            return
+        # Cache for "Open in Excel"
+        self._current_error_order = order
+        
+        self.failure_view.set_error(
+            workbook=order.filename,
+            stage="Batch Execution",
+            checked=result.rows_processed,
+            failed=result.rows_failed,
+            fatal_error=result.errors[0] if result.errors else "Unknown Error",
+            row_errors=result.row_errors
+        )
+        
+        # Override the return routing temporarily
+        original_back = self.failure_view.on_back_clicked
+        original_retry = self.failure_view.on_retry_clicked
+        
+        def _return_to_batch():
+            self._current_error_order = None
+            self.window.show_view("success")
+            self.failure_view.on_back_clicked = original_back
+            self.failure_view.on_retry_clicked = original_retry
             
-        next_path = pending_paths[0]
-        try:
-            stats = next_path.stat()
-            size_kb = max(1, stats.st_size // 1024)
-            mod_date = datetime.fromtimestamp(stats.st_mtime).strftime("%d %b")
-            
-            self._selected_order = PendingOrderInfo(next_path.name, size_kb, mod_date, next_path)
-            self._handle_ready_to_import()
-        except OSError:
-            self.start()
+        self.failure_view.on_back_clicked = _return_to_batch
+        self.failure_view.on_retry_clicked = _return_to_batch
+        self.window.show_view("failure")
 
     def _handle_enter_key(self, event) -> None:
         if getattr(self, '_is_importing', False):
@@ -163,24 +196,19 @@ class GuiController:
             
         current_view = self.window._current_view
         if current_view == self.window._views.get("scan"):
-            self._handle_ready_to_import()
-        elif current_view == self.window._views.get("ready"):
-            self._start_import()
+            if getattr(self.scan_view, "process_btn", None) and self.scan_view.process_btn.cget("state") == "normal":
+                self._start_batch_import(self.scan_view._selected_orders)
         elif current_view == self.window._views.get("success"):
-            if self.success_view.action_btn.cget("text").startswith("Process Next"):
-                self._process_next_file()
-            else:
-                self.start()
+            self.start()
         elif current_view == self.window._views.get("failure"):
-            self._start_import()
+            self.start()
 
     def _handle_escape_key(self, event) -> None:
         if getattr(self, '_is_importing', False):
             return
             
         current_view = self.window._current_view
-        if current_view in (self.window._views.get("ready"), 
-                            self.window._views.get("success"), 
+        if current_view in (self.window._views.get("success"), 
                             self.window._views.get("failure")):
             self.start()
 
@@ -205,8 +233,44 @@ class GuiController:
         """Initial entry point simulating a freshly booted app or returning to scan."""
         self._selected_order = None
         self._is_importing = False
-        self.window.show_view("scan")
-        self._handle_refresh()
+        
+        if not self.is_connected:
+            self.window.show_view("login")
+            self.login_view.clear_password()
+        else:
+            self.window.show_view("scan")
+            self._handle_refresh()
+
+    def _handle_logout_click(self, event=None) -> None:
+        if getattr(self, '_is_importing', False) or not self.is_connected:
+            return
+        if messagebox.askyesno("Logout", "Are you sure you want to log out of Odoo?", parent=self.window):
+            self.logout()
+
+    def logout(self) -> None:
+        if getattr(self, '_is_importing', False) and self.is_connected:
+            return
+            
+        # Optional parameterless call if called from error handling directly
+        self.auth_manager.logout()
+        self.is_connected = False
+        self.import_ctrl = None
+        self.window.header.set_connection_status(False, errored=False)
+        self.start()
+
+    def _attempt_login(self, username, password) -> None:
+        try:
+            context = self.auth_manager.authenticate(username, password)
+            self.login_view.clear_password()
+            self.login_view.clear_error()
+            self.on_auth_success(context)
+            self.start()
+        except OdooConnectionError as e:
+            self.login_view.show_error(str(e))
+            self.login_view.clear_password()
+        except Exception as e:
+            self.login_view.show_error(str(e))
+            self.login_view.clear_password()
 
     def _handle_refresh(self) -> None:
         """Scan real folder for pending orders and update the ScanView."""
@@ -239,44 +303,11 @@ class GuiController:
             # Fallback if not on Windows (though UX spec dictates Windows desktop)
             pass
 
-    def _handle_prev_file(self) -> None:
-        """Slide conveyer belt back one file."""
-        if not getattr(self.scan_view, "_current_orders", None) or not self._selected_order:
-            return
-            
-        orders = self.scan_view._current_orders
-        try:
-            curr_idx = orders.index(self._selected_order)
-            if curr_idx > 0:
-                self._selected_order = orders[curr_idx - 1]
-                self.ready_view.set_order(
-                    self._selected_order, 
-                    has_prev=(curr_idx - 1 > 0), 
-                    has_next=True
-                )
-        except ValueError:
-            pass
-            
-    def _handle_next_file(self) -> None:
-        """Slide conveyer belt forward one file."""
-        if not getattr(self.scan_view, "_current_orders", None) or not self._selected_order:
-            return
-            
-        orders = self.scan_view._current_orders
-        try:
-            curr_idx = orders.index(self._selected_order)
-            if curr_idx < len(orders) - 1:
-                self._selected_order = orders[curr_idx + 1]
-                self.ready_view.set_order(
-                    self._selected_order, 
-                    has_prev=True, 
-                    has_next=(curr_idx + 1 < len(orders) - 1)
-                )
-        except ValueError:
-            pass
-
     def _change_folder(self) -> None:
         """Allow user to change the workspace folder."""
+        from tkinter import filedialog
+        from config.app_config import AppConfig
+        
         current_path = str(self.workspace.root)
         new_dir = filedialog.askdirectory(
             initialdir=current_path,
@@ -291,71 +322,53 @@ class GuiController:
             # Refresh to show files from new location
             self._handle_refresh()
 
-    def _toggle_theme(self) -> None:
-        """Toggle between light and dark themes."""
-        current_theme = AppConfig().get_theme()
-        new_theme = "dark" if current_theme == "light" else "light"
-        AppConfig().set_theme(new_theme)
-        apply_styles(self.window)
+    # -------------------------------------------------------------
+    # Batch Processing Pipeline 
+    # -------------------------------------------------------------
 
-    def _handle_order_selected(self, order: PendingOrderInfo) -> None:
-        self._selected_order = order
-
-    def _handle_ready_to_import(self) -> None:
-        orders = getattr(self.scan_view, "_current_orders", [])
-        
-        has_prev = False
-        has_next = False
-        if orders and self._selected_order in orders:
-            idx = orders.index(self._selected_order)
-            has_prev = (idx > 0)
-            has_next = (idx < len(orders) - 1)
-
-        self.ready_view.set_order(self._selected_order, has_prev=has_prev, has_next=has_next)
-        self.window.show_view("ready")
-
-    def _start_import(self, custom_mappings: dict = None) -> None:
-        """
-        Transition to progress state and dispatch the blocking ImportController
-        work to a background thread to keep the GUI responsive.
-        """
-        if not self._selected_order or self._is_importing:
-            return
-            
-        # Re-check backend component availability
+    def _start_batch_import(self, orders: list[PendingOrderInfo], custom_mappings: dict = None) -> None:
         if not self.import_ctrl:
             self.failure_view.set_error(
-                "Could not connect to Odoo backend. Please restart the application or check your network.",
-                "0 rows validated · 0 rows imported",
-                "CONNECTION_ERROR",
-                "Connecting to Odoo"
+                "Could not connect to Odoo backend. Please check network.",
+                "0 rows validated", "CONNECTION_ERROR", "Connecting"
             )
-            self.window.header.set_connection_status(False, errored=True)
             self.window.show_view("failure")
             return
             
+        if not custom_mappings: # Only reset on initial start
+            self._batch_queue = orders.copy()
+            self._batch_results = []
+            self._batch_total = len(orders)
+            self._batch_start_time = time.time()
+        
         self._is_importing = True
-        self.progress_view.set_filename(self._selected_order.filename)
+        self._process_next_in_batch(custom_mappings)
+
+    def _process_next_in_batch(self, custom_mappings: dict = None) -> None:
+        if not self._batch_queue:
+            self._finish_batch()
+            return
+            
+        self._current_processing_order = self._batch_queue.pop(0)
+        
+        idx = len(self._batch_results) + 1
+        self.progress_view.set_filename(f"Batch ({idx}/{self._batch_total}): {self._current_processing_order.filename}")
         self.progress_view.reset()
         self.window.show_view("progress")
         
-        self._import_start_time = time.time()
-
-        # Kick off visual progress simulation in the main thread (for user feedback)
-        # while the backend threads blocking IO underneath.
         self._simulate_progress(0, 500)
-        
-        target_path = self._selected_order.full_path
+        target_path = self._current_processing_order.full_path
         
         def _worker():
             try:
-                # The backend call is fully synchronous
                 result = self.import_ctrl.import_file(str(target_path), user_mappings=custom_mappings)
                 self.window.after(0, self._on_import_finished, result)
             except Exception as e:
                 self.window.after(0, self._on_import_crashed, e)
                 
         threading.Thread(target=_worker, daemon=True).start()
+
+
 
     def _simulate_progress(self, idx: int, delay_ms: int) -> None:
         """Advance checklist items visually to keep the UI feeling 'alive' during blocking operations."""
@@ -375,87 +388,68 @@ class GuiController:
 
     def _on_import_finished(self, result: ImportResult) -> None:
         """Handle the result object returned from the backend thread."""
-        self._is_importing = False
-        
-        # Complete checklist visually to 100% just before showing results
         for i in range(6):
             self.progress_view.update_step(i, "complete")
             
+        # Check for ambiguities that require human intervention BEFORE continuing batch
+        if not result.success and result.ambiguities:
+            self._batch_queue.insert(0, self._current_processing_order) # Put it back to retry
+            from gui.views.resolution_modal import ResolutionModal
+            # Freeze batch, show modal. The modal callback _retry_with_mappings will unfreeze.
+            ResolutionModal(self.window, result.ambiguities, self._retry_with_mappings)
+            return
+
+        move_success = False
         if result.success:
             try:
-                self.file_manager.move_to_processed(Path(self._selected_order.full_path))
-                move_status = "Moved to Processed Orders"
+                self.file_manager.move_to_processed(Path(self._current_processing_order.full_path))
                 move_success = True
-            except Exception as e:
-                move_status = f"Failed to move file ({e})"
+            except Exception:
                 move_success = False
 
-            duration = time.time() - getattr(self, '_import_start_time', time.time())
-            time_str = f"{duration:.1f}s" if duration > 0.1 else "< 1s"
-            
-            self.success_view.set_result(
-                po_id=f"PO{result.order_id}", 
-                workbook=self._selected_order.filename,
-                rows_total=result.rows_processed, 
-                time_taken=time_str,
-                move_status=move_status, 
-                move_success=move_success
-            )
-            # Log the timestamp in footer
-            now_str = datetime.now().strftime("%I:%M %p").lower().lstrip("0")
-            self.window.status_bar.set_last_import(f"Last import: today at {now_str}")
-            
-            pending_paths = self.scanner.get_pending_files()
-            self.success_view.set_pending_count(len(pending_paths))
+        self._batch_results.append({
+            "order": self._current_processing_order,
+            "result": result,
+            "moved": move_success
+        })
+        
+        # Advance batch
+        self.window.after(100, self._process_next_in_batch)
 
-            self.window.show_view("success")
-        else:
-            if result.ambiguities:
-                from gui.views.resolution_modal import ResolutionModal
-                ResolutionModal(self.window, result.ambiguities, self._retry_with_mappings)
-                self.failure_view.set_error(
-                    workbook=self._selected_order.filename if self._selected_order else "Unknown",
-                    stage="Resolving Ambiguities",
-                    checked=result.rows_processed,
-                    failed=result.rows_failed,
-                    fatal_error="Ambiguous products detected. Please provide mappings.",
-                    row_errors=result.row_errors
-                )
-                self.window.show_view("failure")
-                return
-
-            # Reformat error list for the FailureView
-            if result.duplicate_of:
-                primary_error = result.errors[0]
-                stage = "Checking Manifest"
-            else:
-                primary_error = result.errors[0] if result.errors else "An unexpected error occurred."
-                stage = "Execution"
-
-            self.failure_view.set_error(
-                workbook=self._selected_order.filename if self._selected_order else "Unknown",
-                stage=stage,
-                checked=result.rows_processed,
-                failed=result.rows_failed,
-                fatal_error=primary_error,
-                row_errors=result.row_errors
-            )
-            self.window.show_view("failure")
+    def _finish_batch(self) -> None:
+        self._is_importing = False
+        duration = time.time() - self._batch_start_time
+        time_str = f"{duration:.1f}s" if duration > 0.1 else "< 1s"
+        
+        self.success_view.set_batch_results(self._batch_results, time_str)
+        now_str = datetime.now().strftime("%I:%M %p").lower().lstrip("0")
+        self.window.status_bar.set_last_import(f"Last import: today at {now_str}")
+        self.window.show_view("success")
 
     def _on_import_crashed(self, exception: Exception) -> None:
         """Handle unexpected crashes from the backend thread."""
         self._is_importing = False
-        self.failure_view.set_error(
-            workbook=self._selected_order.filename if self._selected_order else "Unknown",
-            stage="Execution Pipeline",
-            checked=0,
-            failed=0,
-            fatal_error=str(exception),
-            row_errors=[]
-        )
-        self.window.show_view("failure")
+        
+        # Intercept Domain Connection Exceptions
+        if isinstance(exception, (AuthenticationExpiredError, ConnectionLostError)):
+            messagebox.showerror(
+                "Connection Lost", 
+                str(exception) + "\n\nAborting batch and disconnecting.", 
+                parent=self.window
+            )
+            self.logout()
+            return
+            
+        # Log as failed item and continue batch
+        pseudo_res = ImportResult(success=False, file_path=str(self._current_processing_order.full_path), errors=[str(exception)])
+        self._batch_results.append({
+            "order": self._current_processing_order,
+            "result": pseudo_res,
+            "moved": False
+        })
+        self.window.after(100, self._process_next_in_batch)
 
     def _retry_with_mappings(self, mappings: dict) -> None:
         """Called by the ResolutionModal to resubmit with user mappings."""
-        if self._selected_order:
-            self._start_import(custom_mappings=mappings)
+        if self._current_processing_order:
+            self._process_next_in_batch(custom_mappings=mappings)

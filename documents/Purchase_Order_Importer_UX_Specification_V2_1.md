@@ -786,7 +786,7 @@ Every failure is presented in two layers, and the interface never merges them:
 |---|---|---|---|
 | Data validation | ⚠ amber | "Row N could not be processed — [reason]." | "Row 7: Vendor 'ACME Corp' not found in Odoo." |
 | Ambiguous match | ⚠ amber | "Multiple matches found for [item] — import stopped." | "Multiple vendors match 'ACME Corp' — please clarify." |
-| File / header | ⚠ amber | "The workbook is missing a required column — [column name]." | "Required column 'Vendor Code' not found." |
+| File / header | ⚠ amber | "The workbook is missing a required column — [column name]." | "Required column 'Vendor Style Number' not found." |
 | Connection | 🔴 red | "The application could not connect to Odoo." | Additional note: the connection status badge updates to reflect the check failure. |
 
 **Connection failures:** The connection status badge in the header updates immediately to reflect the failure result (the check was triggered immediately before this import). The badge does not continue to "Connected" — it now correctly reflects the most recent check result.

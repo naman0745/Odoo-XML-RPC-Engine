@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Tuple
 
 from config.version import APP_VERSION
-from connection.odoo_client import OdooClient
+from config.settings import ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD
+from connection.auth_manager import AuthenticationManager
 from controllers.import_controller import ImportController, ImportResult
 from filesystem.import_manifest import ImportManifest
 from filesystem.workspace_manager import WorkspaceManager
@@ -53,12 +54,14 @@ def bootstrap() -> Tuple[ImportController, ImportLogger, FileManager]:
     manifest = ImportManifest(workspace.config / "import_manifest.json")
 
     try:
-        # 2. Establish Odoo Connection
-        # The OdooClient reads configuration from config.settings implicitly
-        client = OdooClient()
-        if not client.connect():
-            raise ConnectionError("Failed to authenticate with Odoo server.")
-
+        # 2. Establish Odoo Connection via AuthenticationManager
+        auth_manager = AuthenticationManager(url=ODOO_URL, db=ODOO_DB)
+        context = auth_manager.authenticate(
+            username=ODOO_USERNAME,
+            password=ODOO_PASSWORD
+        )
+        
+        client = context.client
         logger.info("Odoo connection established successfully.")
 
         # 3. Initialize Domain Services

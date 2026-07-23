@@ -89,5 +89,5 @@ The final binary will appear in the `./dist/` directory.
 
 ## ⚠️ Troubleshooting & Known Limitations
 - **Timeout Limitations:** Heavy internet degradation mid-import may cause XML-RPC commands to permanently timeout without triggering a graceful disconnect. The GUI may present as permanently importing. Restart the app.
-- **Mapped Columns Only:** The `RowMapper` only extracts specific columns (Vendor Code, Quantity, Unit Price). Ad-hoc columns pushed by purchasing won't appear on the Odoo end.
+- **Mapped Columns Only:** The `RowMapper` only extracts specific columns (Vendor Style Number, Quantity, Unit Price). Ad-hoc columns pushed by purchasing won't appear on the Odoo end.
 - **Blank Workbooks:** Attempting to scan purely blank files will crash with an assertion loop rather than a graceful UI error. Ensure templates have header definitions.

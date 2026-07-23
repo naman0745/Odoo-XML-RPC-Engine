@@ -41,7 +41,7 @@ class PartnerService(BaseService):
             self.MODEL,
             domain=[
                 ("supplier", "=", True),
-                ("name", "ilike", vendor_name)
+                ("name", "=", vendor_name)
             ],
             limit=2
         )

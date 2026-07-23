@@ -11,7 +11,6 @@ from gui.style import get_theme_colors, FONT_REGULAR_12, FONT_BOLD_14
 class FailureView(ttk.Frame):
     def __init__(self, parent: tk.Widget) -> None:
         super().__init__(parent)
-        self.pack_propagate(False)
 
         self.on_retry_clicked: Optional[Callable[[], None]] = None
         self.on_back_clicked: Optional[Callable[[], None]] = None
@@ -25,7 +24,7 @@ class FailureView(ttk.Frame):
         header = ttk.Frame(container)
         header.pack(fill="x", pady=(0, 24))
         
-        ttk.Label(header, text="⚠", font=("Segoe UI", 32), foreground=get_theme_colors()["AMBER_WARNING"]).pack(side="left", padx=(0, 16))
+        ttk.Label(header, text="⚠", font=("Segoe UI", 32), foreground=get_theme_colors()["warning"]).pack(side="left", padx=(0, 16))
         
         title_frame = ttk.Frame(header)
         title_frame.pack(side="left", fill="x", expand=True)
@@ -54,7 +53,7 @@ class FailureView(ttk.Frame):
         
         self.error_text = tk.Text(
             self.error_text_container, wrap="word", font=FONT_REGULAR_12, 
-            bg=get_theme_colors()["BG_SURFACE"], fg=get_theme_colors()["FG_MAIN"],
+            bg=get_theme_colors()["bg_1"], fg=get_theme_colors()["text_primary"],
             relief="flat", highlightthickness=0,
             height=12, state="disabled"
         )
@@ -103,8 +102,8 @@ class FailureView(ttk.Frame):
         self.error_text.delete("1.0", tk.END)
         self.error_text.tag_config("bold", font=FONT_BOLD_14)
         c = get_theme_colors()
-        self.error_text.tag_config("muted", foreground=c["FG_MUTED"])
-        self.error_text.configure(bg=c["BG_SURFACE"], fg=c["FG_MAIN"])
+        self.error_text.tag_config("muted", foreground=c["text_muted"])
+        self.error_text.configure(bg=c["bg_1"], fg=c["text_primary"])
         
         if not row_errors:
             clean_err = fatal_error

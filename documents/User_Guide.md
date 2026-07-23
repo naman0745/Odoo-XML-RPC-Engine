@@ -36,7 +36,7 @@ The system writes an invisible "fingerprint" (using cryptographic file mapping) 
   - **Solution:** Verify your internet connection is live. If the company server is down for maintenance, you must wait and restart the application completely once back online.
 
 - **[IMPORT_ERROR] "Executing Import"**
-  - **Why:** The spreadsheet has missing required cells (like a Vendor Code left blank), or non-existent items requested.
+  - **Why:** The spreadsheet has missing required cells (like a Vendor Style Number left blank), or non-existent items requested.
   - **Solution:** An explicit error string will populate in the app explaining the row breaking the system. Open the workbook, adjust the cell specifically outlined, save it, and just press retry on the application.
 
 - **Warning: PO Created, but Workbook Could Not Be Moved!**

@@ -15,7 +15,6 @@ class ProgressView(ttk.Frame):
     """
     def __init__(self, parent: tk.Widget) -> None:
         super().__init__(parent)
-        self.pack_propagate(False)
 
         # Header: Filename
         self.filename_lbl = ttk.Label(self, text="", style="Bold.TLabel")
@@ -29,7 +28,7 @@ class ProgressView(ttk.Frame):
         progress_frame = ttk.Frame(self)
         progress_frame.pack(fill="x", padx=32, pady=24)
         
-        self.pbar = ttk.Progressbar(progress_frame, mode="determinate", max=6, style="TProgressbar")
+        self.pbar = ttk.Progressbar(progress_frame, mode="determinate", maximum=6, style="TProgressbar")
         self.pbar.pack(side="left", fill="x", expand=True, padx=(0, 16))
 
         self.step_lbl = ttk.Label(progress_frame, text="(0 of 6)", style="Muted.TLabel")

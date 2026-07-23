@@ -11,19 +11,19 @@ class AmbiguousProductError(ValueError):
         )
         super().__init__(
             "Multiple products matched "
-            f"Vendor Code='{vendor_code}', Color='{color}': {details}"
+            f"Vendor Style Number='{vendor_code}', Color='{color}': {details}"
         )
 
 class ProductNotFoundError(ValueError):
     def __init__(self, vendor_code):
         self.vendor_code = vendor_code
-        super().__init__(f"Vendor Code '{vendor_code}' not found.")
+        super().__init__(f"Vendor Style Number '{vendor_code}' not found.")
 
 class ColorNotFoundError(ValueError):
     def __init__(self, vendor_code, color):
         self.vendor_code = vendor_code
         self.color = color
-        super().__init__(f"Vendor Code '{vendor_code}' found, but Color '{color}' not found.")
+        super().__init__(f"Vendor Style Number '{vendor_code}' found, but Color '{color}' not found.")
 
 
 class ProductService(BaseService):
@@ -67,14 +67,14 @@ class ProductService(BaseService):
         Color: str,
     ) -> dict | None:
         """
-        Find a single ``product.product`` variant by Vendor Code and Color.
+        Find a single ``product.product`` variant by Vendor Style Number and Color.
 
         This is the canonical product-matching strategy for the PO import
         pipeline. Products must never be searched by display name.
 
         Odoo field mapping
         ------------------
-        - **Vendor Code** is stored in ``product.product.x_vendor_code``
+        - **Vendor Style Number** is stored in ``product.product.x_vendor_code``
           (custom field).
         - **Color** is matched against the standard product variant attribute
           values via ``product.product.attribute_value_ids.name``.

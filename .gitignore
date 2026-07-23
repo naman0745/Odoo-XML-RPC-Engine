@@ -11,3 +11,19 @@ __pycache__/
 logs/
 
 .idea/
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# Workspace folders
+Incoming Orders/
+Processed Orders/
+.manifest.json
+
+# Local log files
+*.log
+logs/
+
+documents/

@@ -23,18 +23,19 @@ class ResolutionModal(tk.Toplevel):
         
         self.rowconfigure(1, weight=1)
         self.columnconfigure(0, weight=1)
+        self.configure(bg="#0D0D0D")
         
         self._build_ui()
         
     def _build_ui(self) -> None:
         header = ttk.Label(
             self,
-            text="The following Vendor Codes were not found exactly but had close matches.\nPlease select the correct Odoo products below to retry the import.",
+            text="The following Vendor Style Numbers were not found exactly but had close matches.\nPlease select the correct Odoo products below to retry the import.",
             font=FONT_REGULAR_12
         )
         header.grid(row=0, column=0, padx=20, pady=15, sticky="w")
         
-        frame = ttk.Frame(self)
+        frame = ttk.Frame(self, style="TFrame")
         frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=5)
         frame.columnconfigure(1, weight=1)
         
@@ -61,7 +62,7 @@ class ResolutionModal(tk.Toplevel):
                 cb.current(0)
             self._comboboxes[mapping_key] = (cb, candidates)
             
-        btn_frame = ttk.Frame(self)
+        btn_frame = ttk.Frame(self, style="TFrame")
         btn_frame.grid(row=2, column=0, sticky="e", padx=20, pady=15)
         
         apply_btn = ttk.Button(btn_frame, text="Apply Fixes & Retry", command=self._handle_apply, style="Primary.TButton")

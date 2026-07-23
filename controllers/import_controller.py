@@ -94,7 +94,7 @@ class ImportController:
     partner_service : PartnerService
         Used to resolve the vendor name to an Odoo ``res.partner`` ID.
     product_service : ProductService
-        Used to resolve each row's Vendor Code + Color to a
+        Used to resolve each row's Vendor Style Number + Color to a
         ``product.product`` ID.
     po_service : PurchaseOrderService
         Used to create (and if necessary delete) the ``purchase.order``.
@@ -141,7 +141,7 @@ class ImportController:
         file_path : str
             Path to the ``.xlsx`` workbook to import.
         user_mappings : dict
-            Optional dictionary mapping faulty vendor codes to exact Odoo products
+            Optional dictionary mapping faulty vendor style numbers to exact Odoo products
             resolved by the user via the Ambiguity UI.
 
         Returns
@@ -342,7 +342,7 @@ class ImportController:
                     order_lines.append(self._build_line(row, product))
                     continue
 
-                # 2. Product lookup: Vendor Code + Color (never by name)
+                # 2. Product lookup: Vendor Style Number + Color (never by name)
                 try:
                     product = self._product_service.find_variant(vendor_code, color)
                 except AmbiguousProductError as exc:
@@ -382,7 +382,7 @@ class ImportController:
                         row_errors.append(
                             f"Row {row_num}:\n"
                             f"Product not found in Odoo database.\n"
-                            f"Vendor Code: {vendor_code}   Color: {color}"
+                            f"Vendor Style Number: {vendor_code}   Color: {color}"
                         )
                     rows_failed += 1
                     continue

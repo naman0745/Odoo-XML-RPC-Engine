@@ -17,15 +17,13 @@ class ScanView(ttk.Frame):
     """
     def __init__(self, parent: tk.Widget) -> None:
         super().__init__(parent)
-        self.pack_propagate(False)
 
         # Callbacks
-        self.on_order_selected: Optional[Callable[[PendingOrderInfo], None]] = None
+        self.on_selection_changed: Optional[Callable[[list[PendingOrderInfo]], None]] = None
         self.on_refresh: Optional[Callable[[], None]] = None
-        self.on_import_clicked: Optional[Callable[[], None]] = None
+        self.on_process_clicked: Optional[Callable[[list[PendingOrderInfo]], None]] = None
         self.on_open_folder: Optional[Callable[[], None]] = None
         self.on_change_folder: Optional[Callable[[], None]] = None
-        self.on_theme_toggle: Optional[Callable[[], None]] = None
 
         # ---------------------------------------------------------
         # Header Area (Metadata + Refresh)
@@ -43,11 +41,10 @@ class ScanView(ttk.Frame):
         refresh_btn = ttk.Button(self.top_row, text="⟳ Refresh", style="Ghost.TLabel", cursor="hand2")
         refresh_btn.bind("<Button-1>", lambda e: self.on_refresh() if self.on_refresh else None)
         refresh_btn.pack(side="left", padx=16)
-
-        # Theme toggle button on the right side
-        theme_toggle_btn = ttk.Button(self.top_row, text="◐ Theme", style="Ghost.TLabel", cursor="hand2")
-        theme_toggle_btn.bind("<Button-1>", lambda e: self._handle_theme_toggle())
-        theme_toggle_btn.pack(side="right")
+        
+        self.select_all_btn = ttk.Button(self.top_row, text="Select All", style="Ghost.TLabel", cursor="hand2")
+        self.select_all_btn.bind("<Button-1>", lambda e: self._handle_select_all())
+        self.select_all_btn.pack(side="left", padx=16)
 
         # Bottom row: folder path and change folder button
         self.folder_row = ttk.Frame(self.header_frame)
@@ -61,19 +58,59 @@ class ScanView(ttk.Frame):
         change_folder_btn.pack(side="left", padx=(8, 0))
 
         # ---------------------------------------------------------
-        # Main Content Area (List vs Empty)
+        # Footer Area (Process Button)
         # ---------------------------------------------------------
-        self.content_frame = ttk.Frame(self)
-        self.content_frame.pack(fill="both", expand=True, padx=32)
+        self.footer_frame = ttk.Frame(self, style="Surface.TFrame")
+        self.footer_frame.pack(side="bottom", fill="x")
+        
+        self.process_btn = ttk.Button(self.footer_frame, text="Process Selected (0)", style="Primary.TButton", state="disabled")
+        self.process_btn.configure(command=self._handle_process_click)
+        self.process_btn.pack(side="right", padx=32, pady=16)
 
-        self._selected_order: Optional[PendingOrderInfo] = None
+        # ---------------------------------------------------------
+        # Main Content Area (Scrollable Canvas)
+        # ---------------------------------------------------------
+        self.wrapper = ttk.Frame(self)
+        self.wrapper.pack(fill="both", expand=True, padx=32, pady=(0, 16))
+        
+        # The background of Canvas should match the BG_MAIN which is #0D0D0D
+        self.canvas = tk.Canvas(self.wrapper, bg="#0D0D0D", highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(self.wrapper, orient="vertical", command=self.canvas.yview)
+        
+        self.content_frame = ttk.Frame(self.canvas)
+        self.content_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+        self.canvas.create_window((0, 0), window=self.content_frame, anchor="nw", tags="self.content_frame")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        self.canvas.bind('<Configure>', lambda e: self.canvas.itemconfig('self.content_frame', width=e.width))
+
+        self.canvas.bind("<Enter>", self._bound_to_mousewheel)
+        self.canvas.bind("<Leave>", self._unbound_to_mousewheel)
+
+        self._selected_orders: list[PendingOrderInfo] = []
         self._cards: list[OrderCard] = []
         self._current_orders: list[PendingOrderInfo] = []
 
+    def _bound_to_mousewheel(self, event):
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _unbound_to_mousewheel(self, event):
+        self.canvas.unbind_all("<MouseWheel>")
+
+    def _on_mousewheel(self, event):
+        self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
     def load_files(self, orders: list[PendingOrderInfo], last_scanned: str, incoming_path: str = "") -> None:
         """Populate the view with order data."""
-        self._selected_order = None
+        self._selected_orders.clear()
+        self._update_process_button()
         self._current_orders = orders
+        self.select_all_btn.configure(text="Select All")
 
         # Clear existing cards / empty state contents
         for widget in self.content_frame.winfo_children():
@@ -95,15 +132,13 @@ class ScanView(ttk.Frame):
                 card = OrderCard(
                     self.content_frame, 
                     order, 
-                    self._handle_card_click, 
-                    self._handle_import_click
+                    self._handle_card_click
                 )
                 card.pack(fill="x", pady=(0, 8))
                 self._cards.append(card)
 
-            # Auto-select if exactly 1
-            if count == 1:
-                self._handle_card_click(self._cards[0], orders[0])
+            # Auto-select all by default if you want, or leave unselected.
+            # For robust batching, we start with all unselected naturally.
 
     def _render_empty_state(self, incoming_path: str) -> None:
         # Inner centered frame
@@ -135,19 +170,50 @@ class ScanView(ttk.Frame):
         if self.on_change_folder:
             self.on_change_folder()
 
-    def _handle_theme_toggle(self) -> None:
-        if self.on_theme_toggle:
-            self.on_theme_toggle()
+    def _update_process_button(self) -> None:
+        count = len(self._selected_orders)
+        if count == 0:
+            self.process_btn.configure(text="Process Selected (0)", state="disabled")
+        else:
+            self.process_btn.configure(text=f"Process Selected ({count})", state="normal")
+            
+        if self._current_orders and count == len(self._current_orders):
+            self.select_all_btn.configure(text="Deselect All")
+        else:
+            self.select_all_btn.configure(text="Select All")
 
-    def _handle_card_click(self, clicked_card: OrderCard, order: PendingOrderInfo) -> None:
-        for card in self._cards:
-            card.set_selected(False)
-        clicked_card.set_selected(True)
-        self._selected_order = order
+    def _handle_select_all(self) -> None:
+        if not self._current_orders:
+            return
+            
+        if len(self._selected_orders) == len(self._current_orders):
+            # Deselect all
+            self._selected_orders.clear()
+            for card in self._cards:
+                card.set_selected(False)
+        else:
+            # Select all
+            self._selected_orders = self._current_orders.copy()
+            for card in self._cards:
+                card.set_selected(True)
+                
+        self._update_process_button()
+        if self.on_selection_changed:
+            self.on_selection_changed(self._selected_orders)
+
+    def _handle_card_click(self, clicked_card: OrderCard, order: PendingOrderInfo, is_selected: bool) -> None:
+        if is_selected:
+            if order not in self._selected_orders:
+                self._selected_orders.append(order)
+        else:
+            if order in self._selected_orders:
+                self._selected_orders.remove(order)
+                
+        self._update_process_button()
         
-        if self.on_order_selected:
-            self.on_order_selected(order)
+        if self.on_selection_changed:
+            self.on_selection_changed(self._selected_orders)
 
-    def _handle_import_click(self) -> None:
-        if self._selected_order and self.on_import_clicked:
-            self.on_import_clicked()
+    def _handle_process_click(self) -> None:
+        if self._selected_orders and self.on_process_clicked:
+            self.on_process_clicked(self._selected_orders.copy())

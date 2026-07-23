@@ -6,7 +6,7 @@ from excel.row_mapper import map_row, COLUMN_MAPPING
 # Columns that must exist in the workbook header row.
 REQUIRED_COLUMNS: list[str] = [
     "Vendor",
-    "Vendor Code",
+    "Vendor Style Number",
     "Color",
     "Quantity",
     "Unit Price",

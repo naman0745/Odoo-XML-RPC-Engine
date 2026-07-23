@@ -1,6 +1,8 @@
 import sys
+from typing import Callable
 
-from connection.odoo_client import OdooClient
+from config.settings import ODOO_URL, ODOO_DB
+from connection.auth_manager import AuthenticationManager, AuthenticatedContext
 from controllers.import_controller import ImportController
 from filesystem.folder_scanner import FolderScanner
 from filesystem.import_manifest import ImportManifest
@@ -16,55 +18,88 @@ from gui.style import apply_styles
 from gui.controllers.gui_controller import GuiController
 
 
+def init_unauthenticated(
+    root: MainWindow, 
+    workspace: WorkspaceManager,
+    auth_manager: AuthenticationManager,
+    on_auth_success: Callable[[AuthenticatedContext], None]
+) -> GuiController:
+    """
+    Stage 1: Initialize the UI and passive systems without requiring an Odoo connection.
+    Hooks the AuthManager into the UI controller.
+    """
+    apply_styles(root)
+    
+    scanner = FolderScanner(workspace)
+    file_manager = FileManager(workspace)
+    
+    # Instantiate Controller explicitly without Business Logic
+    controller = GuiController(
+        root, 
+        workspace, 
+        scanner, 
+        file_manager, 
+        auth_manager, 
+        on_auth_success
+    )
+    return controller
+
+
+def init_authenticated(
+    controller: GuiController, 
+    context: AuthenticatedContext, 
+    manifest: ImportManifest, 
+    logger: ImportLogger
+) -> None:
+    """
+    Stage 2: Construct the domain graph now that an authenticated session exists,
+    and wire it into the waiting UI controller.
+    """
+    client = context.client
+    
+    partner_service = PartnerService(client)
+    product_service = ProductService(client)
+    po_service = PurchaseOrderService(client)
+    
+    import_ctrl = ImportController(
+        partner_service=partner_service,
+        product_service=product_service,
+        po_service=po_service,
+        logger=logger,
+        manifest=manifest
+    )
+    
+    controller.inject_authenticated_services(import_ctrl)
+
+
 def main() -> int:
     """
     Entry point for the GUI application.
-    Independent from the CLI (main.py).
     """
     # 1. Initialize Root
     root = MainWindow()
 
-    # 2. Configure Global Styling
-    apply_styles(root)
-
-    # 3. Initialize Backend Components
+    # 2. Workspace & Logging Core
     workspace = WorkspaceManager()
     workspace.ensure_workspace()
-    
     manifest = ImportManifest(workspace.config / "import_manifest.json")
-    scanner = FolderScanner(workspace)
-    
     logger = ImportLogger()
-    import_ctrl = None
-    client_connected = False
     
-    try:
-        client = OdooClient()
-        client.connect()
-        client_connected = True
+    # 3. Startup Pipeline: Unauthenticated Stage
+    auth_manager = AuthenticationManager(url=ODOO_URL, db=ODOO_DB)
+    
+    # Controller requires a callback to initialize domain graph upon success
+    controller = None  # Reference required in closure
+    
+    def handle_auth_success(context: AuthenticatedContext):
+        init_authenticated(controller, context, manifest, logger)
         
-        partner_service = PartnerService(client)
-        product_service = ProductService(client)
-        po_service = PurchaseOrderService(client)
-        
-        import_ctrl = ImportController(
-            partner_service=partner_service,
-            product_service=product_service,
-            po_service=po_service,
-            logger=logger,
-            manifest=manifest
-        )
-    except Exception as e:
-        logger.error(f"Failed to connect to backend: {e}")
-
-    # 4. Instantiate Controller explicitly connecting UI to Business Logic
-    file_manager = FileManager(workspace)
-    controller = GuiController(root, workspace, scanner, import_ctrl, client_connected, file_manager)
-
-    # 5. Start Application
+    controller = init_unauthenticated(root, workspace, auth_manager, handle_auth_success)
+    
+    # 4. Start Application (Will initialize into LoginView)
     controller.start()
 
-    # 6. Enter event loop
+    # 5. Enter event loop
     root.mainloop()
     return 0
 

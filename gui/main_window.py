@@ -7,10 +7,11 @@ from typing import Dict, Optional
 
 from config.version import APP_VERSION
 from gui.views.failure_view import FailureView
+from gui.views.failure_view import FailureView
 from gui.views.progress_view import ProgressView
-from gui.views.ready_view import ReadyView
 from gui.views.scan_view import ScanView
 from gui.views.success_view import SuccessView
+from gui.views.login_view import LoginView
 from gui.widgets.header_band import HeaderBand
 from gui.widgets.status_bar import StatusBar
 
@@ -52,16 +53,16 @@ class MainWindow(tk.Tk):
 
     def register_views(
         self,
+        login_view: LoginView,
         scan_view: ScanView,
-        ready_view: ReadyView,
         progress_view: ProgressView,
         success_view: SuccessView,
         failure_view: FailureView
     ) -> None:
         """Register instantiated views."""
         self._views = {
+            "login": login_view,
             "scan": scan_view,
-            "ready": ready_view,
             "progress": progress_view,
             "success": success_view,
             "failure": failure_view

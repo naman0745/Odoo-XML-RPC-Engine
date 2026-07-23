@@ -2,7 +2,7 @@
 # Format: "Excel Column Name": "internal_field_name"
 COLUMN_MAPPING = {
     "Vendor": "vendor",
-    "Vendor Code": "x_vendor_code",
+    "Vendor Style Number": "x_vendor_code",
     "Color": "attribute_value_ids",
     "Quantity": "product_qty",
     "Unit Price": "price_unit",
