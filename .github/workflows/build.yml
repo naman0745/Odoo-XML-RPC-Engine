@@ -39,7 +39,7 @@ jobs:
         pip install pyinstaller
 
     - name: Build with PyInstaller
-      run: pyinstaller --noconfirm --windowed --clean --onefile gui/app.py
+      run: pyinstaller --noconfirm --windowed --clean --onefile --name "PurchaseOrderImporter" gui/app.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
