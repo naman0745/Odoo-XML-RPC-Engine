@@ -13,8 +13,8 @@ This application is designed as a **conveyer belt** for Purchase Orders:
 ### 1. Installation
 The system is built entirely on standard Python 3 paradigms.
 ```bash
-git clone <repository_url>
-cd <repository_name>
+git clone https://github.com/naman0745/Odoo-XML-RPC-Engine.git
+cd Odoo-XML-RPC-Engine
 pip install -r requirements.txt
 ```
 
@@ -30,4 +30,4 @@ To launch the primary desktop GUI:
 ```bash
 python -m gui.app
 ```
-*(Once launched, simply click "Begin" to select your desired workspace directory and start importing).*
+*(Once launched, simply click on "Change Folder" to select your desired workspace directory and start importing).*
