@@ -7,16 +7,24 @@ Hardlocked to Obsidian Professional Pattern to eliminate runtime switching overh
 import tkinter as tk
 from tkinter import ttk
 
-FONT_REGULAR_12 = ("Segoe UI", 10)
-FONT_REGULAR_13 = ("Segoe UI", 10)
-FONT_REGULAR_14 = ("Segoe UI", 11) 
-FONT_MEDIUM_14  = ("Segoe UI", 11, "bold")
-FONT_BOLD_14    = ("Segoe UI", 11, "bold")
-FONT_BOLD_16    = ("Segoe UI", 13, "bold")
-FONT_BOLD_20    = ("Segoe UI", 16, "bold")
-FONT_MONO_12    = ("Consolas", 10)
-FONT_MONO_14    = ("Consolas", 11)
-FONT_H1_40      = ("Segoe UI", 40)
+import sys
+
+_FONT_FAMILY = _FONT_FAMILY
+if sys.platform == "darwin":
+    _FONT_FAMILY = "Helvetica"
+elif sys.platform == "linux":
+    _FONT_FAMILY = "DejaVu Sans"
+
+FONT_REGULAR_12 = (_FONT_FAMILY, 10)
+FONT_REGULAR_13 = (_FONT_FAMILY, 10)
+FONT_REGULAR_14 = (_FONT_FAMILY, 11) 
+FONT_MEDIUM_14  = (_FONT_FAMILY, 11, "bold")
+FONT_BOLD_14    = (_FONT_FAMILY, 11, "bold")
+FONT_BOLD_16    = (_FONT_FAMILY, 13, "bold")
+FONT_BOLD_20    = (_FONT_FAMILY, 16, "bold")
+FONT_MONO_12    = ("Consolas" if sys.platform == "win32" else "Menlo", 10)
+FONT_MONO_14    = ("Consolas" if sys.platform == "win32" else "Menlo", 11)
+FONT_H1_40      = (_FONT_FAMILY, 40)
 
 PREMIUM_DARK = {
     "bg_0": "#0A0A0F",
@@ -147,50 +155,50 @@ def apply_styles(root: tk.Tk) -> None:
         "ChecklistIcon.TLabel",
         background=bg_0,
         foreground=ThemeColors["text_muted"],
-        font=("Segoe UI", 12)
+        font=(_FONT_FAMILY, 12)
     )
     style.configure(
         "ChecklistIcon.Active.TLabel",
         background=bg_0,
         foreground=ThemeColors["accent"],
-        font=("Segoe UI", 12)
+        font=(_FONT_FAMILY, 12)
     )
     style.configure(
         "ChecklistIcon.Complete.TLabel",
         background=bg_0,
         foreground=ThemeColors["success"],
-        font=("Segoe UI", 12)
+        font=(_FONT_FAMILY, 12)
     )
     style.configure(
         "ChecklistIcon.Failed.TLabel",
         background=bg_0,
         foreground=ThemeColors["error"],
-        font=("Segoe UI", 12)
+        font=(_FONT_FAMILY, 12)
     )
 
     style.configure(
         "ChecklistText.TLabel",
         background=bg_0,
         foreground=ThemeColors["text_muted"],
-        font=("Segoe UI", 12)
+        font=(_FONT_FAMILY, 12)
     )
     style.configure(
         "ChecklistText.Active.TLabel",
         background=bg_0,
         foreground=ThemeColors["accent"],
-        font=("Segoe UI", 12)
+        font=(_FONT_FAMILY, 12)
     )
     style.configure(
         "ChecklistText.Complete.TLabel",
         background=bg_0,
         foreground=ThemeColors["text_primary"],
-        font=("Segoe UI", 12)
+        font=(_FONT_FAMILY, 12)
     )
     style.configure(
         "ChecklistText.Failed.TLabel",
         background=bg_0,
         foreground=ThemeColors["error"],
-        font=("Segoe UI", 12)
+        font=(_FONT_FAMILY, 12)
     )
 
     # -------------------------------------------------------------
@@ -200,7 +208,7 @@ def apply_styles(root: tk.Tk) -> None:
         "SuccessIcon.TLabel",
         background=bg_0,
         foreground=ThemeColors["success"],
-        font=("Segoe UI", 32)
+        font=(_FONT_FAMILY, 32)
     )
     style.configure(
         "Card.TFrame",

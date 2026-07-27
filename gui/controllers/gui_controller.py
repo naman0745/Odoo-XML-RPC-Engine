@@ -26,10 +26,10 @@ from gui.views.success_view import SuccessView
 from gui.style import apply_styles
 from config.app_config import AppConfig
 import time
-import os
 import subprocess
 import keyring
 from config.settings import ODOO_USERNAME
+from utils.os_utils import open_file_or_explorer
 
 APP_KEYRING_SERVICE = "PO_Importer_App"
 
@@ -123,6 +123,8 @@ class GuiController:
         self.window.bind("<Escape>", self._handle_escape_key)
         self.window.bind("<Control-r>", self._handle_ctrl_r_key)
         self.window.bind("<Control-R>", self._handle_ctrl_r_key)
+        self.window.bind("<Command-r>", self._handle_ctrl_r_key)
+        self.window.bind("<Command-R>", self._handle_ctrl_r_key)
 
     def _open_log_file(self) -> None:
         default_log = self.workspace.logs / "import.log"
@@ -130,10 +132,7 @@ class GuiController:
         
         target = default_log if default_log.exists() else fallback_log
         if target.exists():
-            try:
-                os.startfile(str(target.resolve()))
-            except Exception:
-                pass
+            open_file_or_explorer(target)
         else:
             from tkinter import messagebox
             messagebox.showinfo("No Logs", "No log file found yet. Run an import to generate logs.", parent=self.window)
@@ -143,12 +142,7 @@ class GuiController:
         order_to_open = getattr(self, '_current_error_order', None) or getattr(self, '_selected_order', None)
         
         if order_to_open and order_to_open.full_path:
-            import os
-            try:
-                os.startfile(order_to_open.full_path)
-            except Exception:
-                # Silently catch OS errors if there's no handler or if it fails
-                pass
+            open_file_or_explorer(order_to_open.full_path)
 
     def _handle_drill_down_failure(self, args: list) -> None:
         """Route to FailureView dynamically, modifying the Back button to bounce to SuccessView."""
@@ -321,10 +315,7 @@ class GuiController:
         
     def _open_incoming_folder(self) -> None:
         """Open the OS default file explorer for the incoming directory."""
-        try:
-            os.startfile(self.workspace.incoming)
-        except AttributeError:
-            pass
+        open_file_or_explorer(self.workspace.incoming)
 
     def _change_folder(self) -> None:
         """Allow user to change the workspace folder."""
