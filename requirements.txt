@@ -1,6 +1,7 @@
 # Production Runtime Dependencies
 openpyxl>=3.1.2      # Extracts data from Excel purchase orders natively
 python-dotenv>=1.0.0 # Secure configuration payload importing (.env to os.environ)
+keyring>=24.0.0      # Native host OS credential manager access
 
 # Development/Testing Dependencies (Optional for compilation)
 # pytest             # Test suite execution framework

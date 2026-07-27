@@ -23,11 +23,8 @@ class StatusBar(ttk.Frame):
         self._last_import_lbl.grid(row=0, column=1, pady=4)
 
         # Action Links
-        self._conf_lbl = ttk.Label(self, text="Configure Folders", style="Footer.TLabel", cursor="hand2")
-        self._conf_lbl.grid(row=0, column=2, padx=10, pady=4, sticky="e")
-
         self._log_lbl = ttk.Label(self, text="View Log", style="Footer.TLabel", cursor="hand2")
-        self._log_lbl.grid(row=0, column=3, padx=(0, 16), pady=4, sticky="e")
+        self._log_lbl.grid(row=0, column=2, padx=(0, 16), pady=4, sticky="e")
 
     def set_last_import(self, text: str) -> None:
         """Updates the last import label."""

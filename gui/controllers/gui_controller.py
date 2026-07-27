@@ -23,12 +23,16 @@ from gui.views.failure_view import FailureView
 from gui.views.progress_view import ProgressView
 from gui.views.scan_view import ScanView
 from gui.views.success_view import SuccessView
-from gui.views.settings_modal import SettingsModal
 from gui.style import apply_styles
 from config.app_config import AppConfig
 import time
 import os
 import subprocess
+import keyring
+from config.settings import ODOO_USERNAME
+
+APP_KEYRING_SERVICE = "PO_Importer_App"
+
 
 
 class GuiController:
@@ -52,7 +56,6 @@ class GuiController:
         self.auth_manager = auth_manager
         self.on_auth_success = on_auth_success
         
-        # Domain dependencies are resolved post-authentication
         self.import_ctrl = None
         self.is_connected = False
         
@@ -72,10 +75,7 @@ class GuiController:
             self.failure_view
         )
 
-        # Update initial connection status in the header
         self.window.header.set_connection_status(self.is_connected, errored=False)
-
-        # Wire up event hooks
         self._bind_events()
         self.window.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
@@ -85,6 +85,7 @@ class GuiController:
         self._batch_total: int = 0
         self._current_processing_order: Optional[PendingOrderInfo] = None
         self._is_importing: bool = False
+        self._sim_run_id: int = 0
 
     def inject_authenticated_services(self, import_ctrl: ImportController) -> None:
         """
@@ -114,9 +115,7 @@ class GuiController:
         self.failure_view.on_open_excel_clicked = self._open_failed_file_in_excel
 
         # Global Config Actions
-        self.window.header._status_lbl.bind("<Button-1>", self._handle_logout_click)
-        self.window.header._gear_btn.bind("<Button-1>", lambda e: self._open_settings())
-        self.window.status_bar._conf_lbl.bind("<Button-1>", lambda e: self._open_settings())
+        self.window.header.logout_btn.bind("<Button-1>", self._handle_logout_click)
         self.window.status_bar._log_lbl.bind("<Button-1>", lambda e: self._open_log_file())
 
         # Keyboard Navigation
@@ -132,21 +131,12 @@ class GuiController:
         target = default_log if default_log.exists() else fallback_log
         if target.exists():
             try:
-                os.startfile(str(target))
+                os.startfile(str(target.resolve()))
             except Exception:
-                # If on Mac/Linux or failure
                 pass
         else:
             from tkinter import messagebox
             messagebox.showinfo("No Logs", "No log file found yet. Run an import to generate logs.", parent=self.window)
-
-    def _open_settings(self) -> None:
-        SettingsModal(self.window, on_settings_changed=self._apply_settings)
-
-    def _apply_settings(self) -> None:
-        """Called automatically after Save & Apply is pressed inside the Settings Modal."""
-        # 1. Flash new color profile
-        apply_styles(self.window)
 
     def _open_failed_file_in_excel(self) -> None:
         """Opens the physically targeted file in Excel for manual corrections."""
@@ -164,7 +154,6 @@ class GuiController:
         """Route to FailureView dynamically, modifying the Back button to bounce to SuccessView."""
         result, order = args
         
-        # Cache for "Open in Excel"
         self._current_error_order = order
         
         self.failure_view.set_error(
@@ -236,6 +225,22 @@ class GuiController:
         
         if not self.is_connected:
             self.window.show_view("login")
+            
+            config = AppConfig()
+            last_user = config.get_last_username()
+            if not last_user:
+                last_user = ODOO_USERNAME or ""
+
+            if last_user:
+                try:
+                    saved_password = keyring.get_password(APP_KEYRING_SERVICE, last_user)
+                    if saved_password:
+                        self.login_view.set_credentials(last_user, saved_password, remember=True)
+                        self.window.after(100, lambda: self._attempt_login(last_user, saved_password, remember_me=True))
+                        return
+                except Exception:
+                    pass
+
             self.login_view.clear_password()
         else:
             self.window.show_view("scan")
@@ -251,16 +256,35 @@ class GuiController:
         if getattr(self, '_is_importing', False) and self.is_connected:
             return
             
-        # Optional parameterless call if called from error handling directly
         self.auth_manager.logout()
+        last_user = AppConfig().get_last_username()
+        if last_user:
+            try:
+                keyring.delete_password(APP_KEYRING_SERVICE, last_user)
+            except Exception:
+                pass
+                
         self.is_connected = False
         self.import_ctrl = None
         self.window.header.set_connection_status(False, errored=False)
         self.start()
 
-    def _attempt_login(self, username, password) -> None:
+    def _attempt_login(self, username, password, remember_me=False) -> None:
         try:
             context = self.auth_manager.authenticate(username, password)
+            
+            if remember_me:
+                AppConfig().set_last_username(username)
+                try:
+                    keyring.set_password(APP_KEYRING_SERVICE, username, password)
+                except Exception:
+                    pass
+            else:
+                try:
+                    keyring.delete_password(APP_KEYRING_SERVICE, username)
+                except Exception:
+                    pass
+
             self.login_view.clear_password()
             self.login_view.clear_error()
             self.on_auth_success(context)
@@ -300,7 +324,6 @@ class GuiController:
         try:
             os.startfile(self.workspace.incoming)
         except AttributeError:
-            # Fallback if not on Windows (though UX spec dictates Windows desktop)
             pass
 
     def _change_folder(self) -> None:
@@ -356,7 +379,8 @@ class GuiController:
         self.progress_view.reset()
         self.window.show_view("progress")
         
-        self._simulate_progress(0, 500)
+        self._sim_run_id += 1
+        self._simulate_progress(0, 500, self._sim_run_id)
         target_path = self._current_processing_order.full_path
         
         def _worker():
@@ -370,9 +394,9 @@ class GuiController:
 
 
 
-    def _simulate_progress(self, idx: int, delay_ms: int) -> None:
+    def _simulate_progress(self, idx: int, delay_ms: int, expected_sim_id: int = -1) -> None:
         """Advance checklist items visually to keep the UI feeling 'alive' during blocking operations."""
-        if not self._is_importing:
+        if not self._is_importing or self._sim_run_id != expected_sim_id:
             return
             
         stages = 6
@@ -381,21 +405,22 @@ class GuiController:
         
         if idx < stages:
             self.progress_view.update_step(idx, "active")
-            # Step slower as it goes further so we don't 'finish' simulated progress 
-            # wildly early before the real backend finishes.
             next_delay = min(delay_ms * 2, 2000) 
-            self.window.after(delay_ms, self._simulate_progress, idx + 1, next_delay)
+            self.window.after(delay_ms, self._simulate_progress, idx + 1, next_delay, expected_sim_id)
 
     def _on_import_finished(self, result: ImportResult) -> None:
         """Handle the result object returned from the backend thread."""
-        for i in range(6):
-            self.progress_view.update_step(i, "complete")
+        self._sim_run_id += 1 
+        if result.success:
+            for i in range(6):
+                self.progress_view.update_step(i, "complete")
+        else:
+            for i in range(6):
+                self.progress_view.update_step(i, "failed")
             
-        # Check for ambiguities that require human intervention BEFORE continuing batch
         if not result.success and result.ambiguities:
             self._batch_queue.insert(0, self._current_processing_order) # Put it back to retry
             from gui.views.resolution_modal import ResolutionModal
-            # Freeze batch, show modal. The modal callback _retry_with_mappings will unfreeze.
             ResolutionModal(self.window, result.ambiguities, self._retry_with_mappings)
             return
 
@@ -413,21 +438,50 @@ class GuiController:
             "moved": move_success
         })
         
-        # Advance batch
-        self.window.after(100, self._process_next_in_batch)
+        # Advance batch with a longer delay on failure so the crosses are visible
+        delay = 100 if result.success else 600
+        self.window.after(delay, self._process_next_in_batch)
 
     def _finish_batch(self) -> None:
         self._is_importing = False
         duration = time.time() - self._batch_start_time
         time_str = f"{duration:.1f}s" if duration > 0.1 else "< 1s"
         
-        self.success_view.set_batch_results(self._batch_results, time_str)
         now_str = datetime.now().strftime("%I:%M %p").lower().lstrip("0")
         self.window.status_bar.set_last_import(f"Last import: today at {now_str}")
+        
+        # UX Fast-path: If user only selected 1 file and it failed, skip the listbox entirely and show real errors
+        if self._batch_total == 1:
+            res = self._batch_results[0]["result"]
+            if not res.success:
+                order = self._batch_results[0]["order"]
+                self._current_error_order = order
+                self.failure_view.set_error(
+                    workbook=order.filename,
+                    stage="Import Pipeline",
+                    checked=res.rows_processed,
+                    failed=res.rows_failed,
+                    fatal_error=res.errors[0] if res.errors else "Unknown Error",
+                    row_errors=res.row_errors
+                )
+                
+                # Reset routes
+                def _return_to_start():
+                    self._current_error_order = None
+                    self.start()
+                    
+                self.failure_view.on_back_clicked = _return_to_start
+                self.failure_view.on_retry_clicked = _return_to_start
+                
+                self.window.show_view("failure")
+                return
+
+        self.success_view.set_batch_results(self._batch_results, time_str)
         self.window.show_view("success")
 
     def _on_import_crashed(self, exception: Exception) -> None:
         """Handle unexpected crashes from the backend thread."""
+        self._sim_run_id += 1  # Halt simulation override
         self._is_importing = False
         
         # Intercept Domain Connection Exceptions
@@ -440,14 +494,17 @@ class GuiController:
             self.logout()
             return
             
-        # Log as failed item and continue batch
         pseudo_res = ImportResult(success=False, file_path=str(self._current_processing_order.full_path), errors=[str(exception)])
         self._batch_results.append({
             "order": self._current_processing_order,
             "result": pseudo_res,
             "moved": False
         })
-        self.window.after(100, self._process_next_in_batch)
+        
+        for i in range(6):
+            self.progress_view.update_step(i, "failed")
+            
+        self.window.after(600, self._process_next_in_batch)
 
     def _retry_with_mappings(self, mappings: dict) -> None:
         """Called by the ResolutionModal to resubmit with user mappings."""

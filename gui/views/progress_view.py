@@ -16,15 +16,12 @@ class ProgressView(ttk.Frame):
     def __init__(self, parent: tk.Widget) -> None:
         super().__init__(parent)
 
-        # Header: Filename
         self.filename_lbl = ttk.Label(self, text="", style="Bold.TLabel")
         self.filename_lbl.pack(anchor="w", padx=32, pady=(32, 16))
 
-        # Checklist Widget
         self.checklist = ChecklistWidget(self)
         self.checklist.pack(fill="x", padx=32)
 
-        # Progress Bar & text
         progress_frame = ttk.Frame(self)
         progress_frame.pack(fill="x", padx=32, pady=24)
         

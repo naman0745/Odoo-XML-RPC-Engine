@@ -102,8 +102,15 @@ class ExcelProcessor:
         if not ok:
             errors.append(msg)
 
+        has_vendor_code = "Vendor Code" in headers
+        has_vendor_style = "Vendor Style Number" in headers
+        
+        if not (has_vendor_code or has_vendor_style):
+            errors.append("Missing required columns: Vendor Code or Vendor Style Number")
+
+        other_required = [col for col in REQUIRED_COLUMNS if col != "Vendor Style Number"]
         ok, msg = self._validator.validate_required_columns(
-            headers, REQUIRED_COLUMNS
+            headers, other_required
         )
         if not ok:
             errors.append(msg)

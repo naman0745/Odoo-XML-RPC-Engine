@@ -1,7 +1,6 @@
 """
 config/app_config.py
-Manages the application's persistent settings.
-Anchored strictly to ~Documents/PurchaseOrder_Importer/config.json.
+Manages the application's persistent settings via an external JSON file.
 """
 import json
 import os
@@ -35,7 +34,8 @@ class AppConfig:
     def reset_to_defaults(self) -> dict:
         default_data = {
             "workspace_root": str(self.master_dir),
-            "theme": "light"
+            "theme": "light",
+            "last_username": ""
         }
         self._save(default_data)
         return default_data
@@ -59,3 +59,13 @@ class AppConfig:
         data = self._load()
         data["theme"] = theme
         self._save(data)
+
+    def get_last_username(self) -> str:
+        data = self._load()
+        return data.get("last_username", "")
+
+    def set_last_username(self, username: str) -> None:
+        data = self._load()
+        data["last_username"] = username
+        self._save(data)
+

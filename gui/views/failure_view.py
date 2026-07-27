@@ -20,7 +20,6 @@ class FailureView(ttk.Frame):
         container = ttk.Frame(self)
         container.pack(fill="both", expand=True, padx=48, pady=32)
 
-        # Header
         header = ttk.Frame(container)
         header.pack(fill="x", pady=(0, 24))
         
@@ -32,7 +31,6 @@ class FailureView(ttk.Frame):
         self.workbook_lbl = ttk.Label(title_frame, text="Workbook: Unknown", style="Muted.TLabel")
         self.workbook_lbl.pack(anchor="w")
 
-        # Summary Card (ttk natively styled)
         self.summary_frame = ttk.Frame(container, style="Card.TFrame")
         self.summary_frame.pack(fill="x", pady=(0, 16), ipadx=16, ipady=8)
         
@@ -42,9 +40,11 @@ class FailureView(ttk.Frame):
         self.summary_lbl = ttk.Label(self.summary_frame, text="0 Rows Checked · 0 Rows Failed", style="CardMeta.TLabel")
         self.summary_lbl.pack(anchor="w", padx=24, pady=(0, 24))
 
-        # Scrollable Error List
+        footer = ttk.Frame(container)
+        footer.pack(side="bottom", fill="x", pady=(16, 0))
+
         list_container = ttk.Frame(container)
-        list_container.pack(fill="both", expand=True)
+        list_container.pack(side="top", fill="both", expand=True)
         
         ttk.Label(list_container, text="Validation Details:", style="Bold.TLabel").pack(anchor="w", pady=(0, 4))
         
@@ -63,20 +63,17 @@ class FailureView(ttk.Frame):
         self.error_text.pack(side="left", fill="both", expand=True, padx=12, pady=12)
         scrollbar.pack(side="right", fill="y")
         
-        # Technical Details Toggle
-        self.tech_btn = ttk.Label(container, text="▶ Show Technical Details", style="Ghost.TLabel", cursor="hand2")
-        self.tech_btn.pack(anchor="w", pady=(16, 8))
+        self.tech_btn = ttk.Label(footer, text="▶ Show Technical Details", style="Ghost.TLabel", cursor="hand2")
+        self.tech_btn.pack(anchor="w", pady=(0, 8))
         self.tech_btn.bind("<Button-1>", self._toggle_tech)
         
-        # Technical Details Card
-        self.tech_details_frame = ttk.Frame(container, style="Card.TFrame")
+        self.tech_details_frame = ttk.Frame(footer, style="Card.TFrame")
         self.tech_code_lbl = ttk.Label(self.tech_details_frame, text="", style="MonoMuted.TLabel")
         self.tech_code_lbl.pack(fill="x", padx=24, pady=16)
 
-        ttk.Label(container, text="ⓘ Workbook remains in Incoming Orders — please correct the errors and try again.", style="Muted.TLabel").pack(anchor="w", pady=(8, 16))
+        ttk.Label(footer, text="ⓘ Workbook remains in Incoming Orders — please correct the errors and try again.", style="Muted.TLabel").pack(anchor="w", pady=(8, 16))
 
-        # Buttons
-        btn_frame = ttk.Frame(container)
+        btn_frame = ttk.Frame(footer)
         btn_frame.pack(anchor="e")
         
         self.back_btn = ttk.Button(btn_frame, text="Back to Order List", style="Secondary.TButton")

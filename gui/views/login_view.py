@@ -5,7 +5,7 @@ from typing import Callable
 class LoginView(ttk.Frame):
     def __init__(self, parent: tk.Widget) -> None:
         super().__init__(parent, style="TFrame")
-        self.on_login: Callable[[str, str], None] = lambda u, p: None
+        self.on_login: Callable[[str, str, bool], None] = lambda u, p, r: None
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
@@ -73,14 +73,22 @@ class LoginView(ttk.Frame):
     def _handle_login(self):
         user = self.user_entry.get().strip()
         pwd = self.pass_entry.get()
+        remember = self.remember_var.get()
         if user and pwd:
             # Disable UX
             self.login_btn.state(['disabled'])
             self.login_btn.config(text="Authenticating...")
             self.update_idletasks()
-            self.on_login(user, pwd)
+            self.on_login(user, pwd, remember)
             self.login_btn.state(['!disabled'])
             self.login_btn.config(text="Login")
+
+    def set_credentials(self, username: str, password: str, remember: bool = True):
+        self.user_entry.delete(0, tk.END)
+        self.user_entry.insert(0, username)
+        self.pass_entry.delete(0, tk.END)
+        self.pass_entry.insert(0, password)
+        self.remember_var.set(remember)
 
     def show_error(self, message: str):
         self.error_var.set(message)

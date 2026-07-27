@@ -83,7 +83,7 @@ def main() -> int:
     workspace = WorkspaceManager()
     workspace.ensure_workspace()
     manifest = ImportManifest(workspace.config / "import_manifest.json")
-    logger = ImportLogger()
+    logger = ImportLogger(log_file=str(workspace.logs / "import.log"))
     
     # 3. Startup Pipeline: Unauthenticated Stage
     auth_manager = AuthenticationManager(url=ODOO_URL, db=ODOO_DB)

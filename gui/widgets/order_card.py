@@ -6,7 +6,7 @@ from tkinter import ttk
 from typing import Callable, Optional
 
 from gui.models.ui_models import PendingOrderInfo
-from gui.style import get_theme_colors, register_theme_listener, unregister_theme_listener
+from gui.style import get_theme_colors
 
 
 class OrderCard(ttk.Frame):
@@ -47,13 +47,6 @@ class OrderCard(ttk.Frame):
 
         # Bind events
         self._bind_events()
-        
-        # Listen for theme changes to dynamically re-fetch colors
-        register_theme_listener(self._refresh_colors)
-
-    def destroy(self) -> None:
-        unregister_theme_listener(self._refresh_colors)
-        super().destroy()
 
     def _refresh_colors(self) -> None:
         colors = get_theme_colors()

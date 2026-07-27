@@ -3,6 +3,7 @@
 COLUMN_MAPPING = {
     "Vendor": "vendor",
     "Vendor Style Number": "x_vendor_code",
+    "Vendor Code": "x_vendor_code",
     "Color": "attribute_value_ids",
     "Quantity": "product_qty",
     "Unit Price": "price_unit",
@@ -24,7 +25,9 @@ def map_row(row, mapping=COLUMN_MAPPING):
     mapped_row = {}
     for excel_col, internal_field in mapping.items():
         # Map the value from the excel column to the internal field
-        # Use .get() to avoid KeyErrors if a column is missing
-        mapped_row[internal_field] = row.get(excel_col)
+        # Only assign if it actually exists in the row to avoid overwriting 
+        # a successful alias match with a None from a missing alias.
+        if excel_col in row:
+            mapped_row[internal_field] = row[excel_col]
 
     return mapped_row

@@ -23,8 +23,6 @@ Before running any module, configure the authentication backend by creating a `.
 ```env
 ODOO_URL=http://your-odoo-instance.com
 ODOO_DB=your_database_name
-ODOO_USERNAME=your_admin_email@example.com
-ODOO_PASSWORD=your_password
 ```
 
 ### 3. Execution

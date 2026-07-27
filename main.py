@@ -41,20 +41,19 @@ def bootstrap() -> Tuple[ImportController, ImportLogger, FileManager]:
     Raises:
         Exception: If Odoo connection fails or dependency instantiation errors occur.
     """
-    # 1. Initialize Logging
-    logger = ImportLogger()
-    logger.info("Bootstrapping application dependencies...")
-
-    # 1a. Ensure the workspace folder structure exists.
-    # This is idempotent: safe to call on every startup.
+    # Ensure the workspace folder structure exists.
     workspace = WorkspaceManager()
     workspace.ensure_workspace()
 
-    # 1b. Initialize the import manifest (duplicate protection).
+    # Initialize Logging
+    logger = ImportLogger(log_file=str(workspace.logs / "import.log"))
+    logger.info("Bootstrapping application dependencies...")
+
+    # Initialize import manifest (duplicate protection)
     manifest = ImportManifest(workspace.config / "import_manifest.json")
 
     try:
-        # 2. Establish Odoo Connection via AuthenticationManager
+        # Establish Odoo connection
         auth_manager = AuthenticationManager(url=ODOO_URL, db=ODOO_DB)
         context = auth_manager.authenticate(
             username=ODOO_USERNAME,
@@ -64,14 +63,12 @@ def bootstrap() -> Tuple[ImportController, ImportLogger, FileManager]:
         client = context.client
         logger.info("Odoo connection established successfully.")
 
-        # 3. Initialize Domain Services
-        # All services share the same connected OdooClient instance
+        # Initialize domain services
         partner_service = PartnerService(client)
         product_service = ProductService(client)
         po_service = PurchaseOrderService(client)
 
-        # 4. Initialize the Orchestration Controller
-        # The controller coordinates the services and the logger
+        # Initialize orchestration controller
         controller = ImportController(
             partner_service=partner_service,
             product_service=product_service,
@@ -131,13 +128,13 @@ def main() -> int:
     file_path = sys.argv[1]
 
     try:
-        # 1. Setup the application (Composition Root)
+        # Setup execution environment
         controller, logger, file_manager = bootstrap()
 
-        # 2. Execute the workflow
+        # Execute the workflow
         result = controller.import_file(file_path)
 
-        # 3. Present the outcome
+        # Output the outcome
         print_result(result)
 
         if result.success:
@@ -150,8 +147,7 @@ def main() -> int:
         return 0 if result.success else 1
 
     except Exception as e:
-        # This catches bootstrapping errors or unhandled controller exceptions
-        # Since bootstrap() might fail before logger is fully ready, we use a fallback
+        # Handle fatal initialization errors
         print(f"\n[CRITICAL ERROR] Application failed to start: {str(e)}")
         return 1
 

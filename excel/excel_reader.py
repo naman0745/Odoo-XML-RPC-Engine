@@ -3,7 +3,7 @@ import openpyxl
 class ExcelReader:
     def __init__(self, file_path):
         self.file_path = file_path
-        self.workbook = openpyxl.load_workbook(file_path, data_only=True)
+        self.workbook = openpyxl.load_workbook(file_path, data_only=True, read_only=True)
         self.sheet = self.workbook.active
 
     def get_headers(self):

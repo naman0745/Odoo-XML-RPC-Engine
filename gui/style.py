@@ -44,12 +44,6 @@ PREMIUM_DARK = {
 def get_theme_colors() -> dict:
     return PREMIUM_DARK
 
-def register_theme_listener(callback) -> None:
-    pass
-
-def unregister_theme_listener(callback) -> None:
-    pass
-
 def apply_styles(root: tk.Tk) -> None:
     ThemeColors = get_theme_colors()
     
@@ -65,8 +59,8 @@ def apply_styles(root: tk.Tk) -> None:
     root.option_add("*Listbox*foreground", ThemeColors["text_primary"])
     root.option_add("*Listbox*selectBackground", ThemeColors["accent"])
     
-    root.option_add("*TCombobox*Listbox.background", "white")
-    root.option_add("*TCombobox*Listbox.foreground", "black")
+    root.option_add("*TCombobox*Listbox.background", bg_2)
+    root.option_add("*TCombobox*Listbox.foreground", ThemeColors["text_primary"])
     root.option_add("*TCombobox*Listbox.selectBackground", ThemeColors["accent"])
     
     style = ttk.Style(root)
@@ -82,7 +76,13 @@ def apply_styles(root: tk.Tk) -> None:
     
     # Inputs
     style.configure("TEntry", fieldbackground=bg_1, foreground=ThemeColors["text_primary"], insertcolor=ThemeColors["text_primary"])
-    style.configure("TCombobox", fieldbackground=bg_1, foreground=ThemeColors["text_primary"], insertcolor=ThemeColors["text_primary"], background=bg_1)
+    style.configure("TCombobox", fieldbackground=bg_1, foreground=ThemeColors["text_primary"], insertcolor=ThemeColors["text_primary"], background=bg_1, arrowcolor=ThemeColors["text_primary"])
+    style.map(
+        "TCombobox",
+        fieldbackground=[("readonly", bg_1), ("disabled", bg_0)],
+        background=[("readonly", bg_1)],
+        foreground=[("readonly", ThemeColors["text_primary"])]
+    )
     
     # Selected Cards
     style.configure("Selected.TFrame", background=ThemeColors["row_selected"])

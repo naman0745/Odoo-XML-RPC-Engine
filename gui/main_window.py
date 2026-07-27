@@ -24,8 +24,8 @@ class MainWindow(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title(f"Purchase Order Importer v{APP_VERSION}")
-        self.geometry("760x560")
-        self.minsize(640, 480)
+        self.geometry("860x680")
+        self.minsize(800, 600)
         
         # Grid layout for root
         self.rowconfigure(1, weight=1)  # The content area is stretchy

@@ -33,7 +33,6 @@ class SuccessView(ttk.Frame):
         self.summary_lbl = ttk.Label(title_frame, text="0 of 0 imported successfully", style="Muted.TLabel")
         self.summary_lbl.pack(anchor="w")
 
-        # Scrollable log area for results
         self.results_frame = ttk.Frame(container, style="Card.TFrame")
         self.results_frame.pack(fill="both", expand=True, pady=(0, 24))
         
@@ -44,7 +43,6 @@ class SuccessView(ttk.Frame):
         self.scrollbar.pack(side="right", fill="y", pady=16, padx=(0, 16))
         self.listbox.config(yscrollcommand=self.scrollbar.set)
         
-        # Double click bind for failures
         self.listbox.bind("<Double-Button-1>", self._handle_item_double_click)
         
         self._batch_results = []
@@ -66,10 +64,10 @@ class SuccessView(ttk.Frame):
         
         if success_count == total:
             self.icon_lbl.configure(text="✓", style="SuccessIcon.TLabel")
-            self.title_lbl.configure(text="Batch Complete")
+            self.title_lbl.configure(text="Import Complete" if total == 1 else "Batch Complete")
         elif success_count == 0:
             self.icon_lbl.configure(text="✖", style="Error.TLabel")
-            self.title_lbl.configure(text="Batch Failed")
+            self.title_lbl.configure(text="Import Failed" if total == 1 else "Batch Failed")
         else:
             self.icon_lbl.configure(text="⚠", style="Warning.TLabel")
             self.title_lbl.configure(text="Batch Partially Completed")
@@ -81,10 +79,9 @@ class SuccessView(ttk.Frame):
             order = item["order"]
             res = item["result"]
             if res.success:
-                status = f"✅ SUCCESS: {order.filename} -> PO#{res.order_id}"
+                status = f"✅ SUCCESS: {order.filename} -> PO #{res.order_id}"
             else:
-                err_msg = res.errors[0] if res.errors else "Unknown error"
-                status = f"❌ FAILED: {order.filename} -> {err_msg}"
+                status = f"❌ FAILED: {order.filename} -> (Double-click to view error details)"
             self.listbox.insert(tk.END, status)
             if not res.success:
                 self.listbox.itemconfig(idx, {'fg': '#EF5350'})
