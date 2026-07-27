@@ -41,13 +41,8 @@ jobs:
     - name: Build with PyInstaller
       run: pyinstaller --clean --onefile gui/app.py
 
-    - name: Upload Compiled Executable
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: PO-Importer-${{ runner.os }}
-        path: |
-          dist/PurchaseOrderImporter
-          dist/PurchaseOrderImporter.exe
-          dist/PurchaseOrderImporter.app
-        # This ignores errors if a specific OS extension (like .exe) isn't found
-        if-no-files-found: ignore
+        name: PurchaseOrderImporter-${{ matrix.os }}
+        path: dist/
