@@ -30,7 +30,7 @@ jobs:
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install -y python3-tk binutils
+        sudo apt-get install -y python3-tk binutils libsecret-1-dev
 
     - name: Install Python Dependencies
       run: |
@@ -39,7 +39,13 @@ jobs:
         pip install pyinstaller
 
     - name: Build with PyInstaller
-      run: pyinstaller --noconfirm --windowed --clean --onefile --name "PurchaseOrderImporter" gui/app.py
+      run: >
+        pyinstaller --noconfirm --windowed --clean --onefile
+        --name "PurchaseOrderImporter"
+        --hidden-import keyring.backends.Windows
+        --hidden-import keyring.backends.macOS
+        --hidden-import keyring.backends.SecretService
+        gui/app.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4

@@ -1,6 +1,7 @@
 .env
 
 .venv/
+.venv_linux/
 venv/
 
 __pycache__/
@@ -28,6 +29,6 @@ logs/
 
 /documents/
 
-Build.spec
 
 main.py
+config/settings.py

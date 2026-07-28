@@ -34,8 +34,9 @@ class AppConfig:
     def reset_to_defaults(self) -> dict:
         default_data = {
             "workspace_root": str(self.master_dir),
-            "theme": "light",
-            "last_username": ""
+            "last_username": "",
+            "odoo_url": "",
+            "odoo_db": ""
         }
         self._save(default_data)
         return default_data
@@ -51,15 +52,6 @@ class AppConfig:
         data["workspace_root"] = str(new_val)
         self._save(data)
 
-    def get_theme(self) -> str:
-        data = self._load()
-        return data.get("theme", "light")
-
-    def set_theme(self, theme: str) -> None:
-        data = self._load()
-        data["theme"] = theme
-        self._save(data)
-
     def get_last_username(self) -> str:
         data = self._load()
         return data.get("last_username", "")
@@ -67,5 +59,23 @@ class AppConfig:
     def set_last_username(self, username: str) -> None:
         data = self._load()
         data["last_username"] = username
+        self._save(data)
+
+    def get_odoo_url(self) -> str:
+        data = self._load()
+        return data.get("odoo_url", "")
+
+    def set_odoo_url(self, url: str) -> None:
+        data = self._load()
+        data["odoo_url"] = url
+        self._save(data)
+
+    def get_odoo_db(self) -> str:
+        data = self._load()
+        return data.get("odoo_db", "")
+
+    def set_odoo_db(self, db: str) -> None:
+        data = self._load()
+        data["odoo_db"] = db
         self._save(data)
 

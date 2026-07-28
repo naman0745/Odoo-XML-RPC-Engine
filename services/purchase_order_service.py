@@ -27,84 +27,6 @@ class PurchaseOrderService(BaseService):
     # Read operations
     # ------------------------------------------------------------------
 
-    def get_order_by_id(self, order_id: int) -> dict | None:
-        """
-        Fetch a single purchase order header by its Odoo database ID.
-
-        Parameters
-        ----------
-        order_id : int
-            The ``purchase.order`` record ID.
-
-        Returns
-        -------
-        dict | None
-            A dictionary of all default Odoo fields for the record,
-            or ``None`` if no record is found.
-        """
-        results = self.client.search_read(
-            self.ORDER_MODEL,
-            domain=[("id", "=", order_id)],
-            limit=1
-        )
-        return results[0] if results else None
-
-    def search_orders(
-        self,
-        domain: list | None = None,
-        fields: list | None = None,
-        limit: int = 100
-    ) -> list[dict]:
-        """
-        Search purchase orders with an arbitrary domain.
-
-        Parameters
-        ----------
-        domain : list | None
-            An Odoo domain filter, e.g. ``[("state", "=", "purchase")]``.
-            Defaults to ``[]`` (all records).
-        fields : list | None
-            List of field names to return. If ``None``, Odoo returns all
-            default fields.
-        limit : int
-            Maximum number of records to return. Defaults to ``100``.
-
-        Returns
-        -------
-        list[dict]
-            A list of purchase order dictionaries.
-        """
-        if domain is None:
-            domain = []
-
-        return self.client.search_read(
-            self.ORDER_MODEL,
-            domain=domain,
-            fields=fields,
-            limit=limit
-        )
-
-    def order_exists(self, name: str) -> bool:
-        """
-        Check whether a purchase order with the given reference name exists.
-
-        Parameters
-        ----------
-        name : str
-            The PO reference as it appears in Odoo (e.g. ``"P00042"``).
-
-        Returns
-        -------
-        bool
-            ``True`` if at least one matching record exists, ``False``
-            otherwise.
-        """
-        ids = self.client.search(
-            self.ORDER_MODEL,
-            domain=[("name", "=", name)]
-        )
-        return bool(ids)
-
     def get_order_lines(
         self,
         order_id: int,
@@ -132,6 +54,18 @@ class PurchaseOrderService(BaseService):
             fields=fields
         )
 
+    def find_payment_term_id(self, term_name: str) -> int | None:
+        """
+        Look up a payment term strictly by its exact display name dynamically.
+        """
+        records = self.client.search_read(
+            "account.payment.term",
+            domain=[("name", "=ilike", term_name)],
+            fields=["id"],
+            limit=1
+        )
+        return records[0]["id"] if records else None
+
     # ------------------------------------------------------------------
     # Write operations
     # ------------------------------------------------------------------
@@ -139,8 +73,13 @@ class PurchaseOrderService(BaseService):
     def create_order(
         self,
         partner_id: int,
-        order_lines: list[dict]
-    ) -> int:
+        order_lines: list[dict],
+        x_country: str | None = None,
+        payment_term_id: int | None = None,
+        date_order: str | None = None,
+        x_ship_via: str | None = None,
+        x_sample_date: str | None = None,
+    ) -> tuple[int, str]:
         """
         Create a new purchase order (in draft state) with all its line items
         in a single XML-RPC call.
@@ -162,11 +101,15 @@ class PurchaseOrderService(BaseService):
             - ``price_unit``  (float) — Unit price.
             - ``date_planned`` (str)  — Expected delivery date in ISO 8601
                                         format (``"YYYY-MM-DD"``).
+        country_id : int, optional
+            The Country ID for the PO (mapped to a custom or inherited field).
+        payment_term_id : int, optional
+            The Payment Terms ID for the PO.
 
         Returns
         -------
-        int
-            The database ID of the newly created ``purchase.order`` record.
+        tuple[int, str]
+            The database ID and standard PO UI Name of the newly created ``purchase.order`` record.
 
         Notes
         -----
@@ -180,7 +123,26 @@ class PurchaseOrderService(BaseService):
                 (0, 0, line) for line in order_lines
             ],
         }
-        return self.client.create(self.ORDER_MODEL, payload)
+        if x_country:
+            payload["x_country"] = x_country  # String selection mapped from Excel directly!
+        if payment_term_id:
+            payload["payment_term_id"] = payment_term_id
+        if date_order:
+            payload["date_order"] = date_order
+        if x_ship_via:
+            payload["x_ship_via"] = x_ship_via
+        if x_sample_date:
+            payload["x_sample_date"] = x_sample_date
+        order_id = self.client.create(self.ORDER_MODEL, payload)
+        # Fetch the human-readable PO Name formatted directly from the server
+        po_record = self.client.search_read(
+            self.ORDER_MODEL,
+            domain=[("id", "=", order_id)],
+            fields=["name"],
+            limit=1
+        )
+        order_name = po_record[0]["name"] if po_record else f"PO-{order_id}"
+        return order_id, order_name
 
     def delete_order(self, order_id: int) -> bool:
         """

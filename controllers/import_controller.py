@@ -35,6 +35,8 @@ class ImportResult:
     order_id : int | None
         The Odoo ``purchase.order`` ID of the created record, or ``None``
         if the import did not reach the creation step.
+    order_name : str | None
+        The native Odoo ``name`` (e.g., 'PO00045') of the created record.
     errors : list[str]
         Fatal errors that prevented the import from completing
         (e.g. file not found, vendor not found, Odoo connection error).
@@ -50,6 +52,7 @@ class ImportResult:
     success: bool
     file_path: str
     order_id: int | None = None
+    order_name: str | None = None
     duplicate_of: int | None = None
     errors: list[str] = field(default_factory=list)
     row_errors: list[str] = field(default_factory=list)
@@ -321,6 +324,30 @@ class ImportController:
                 )
             self._logger.info(f"Vendor found: {vendor_name}.")
             partner_id: int = vendor["id"]
+            
+            # Extract x_country strictly from the Excel file payload mapped as a selection string
+            x_country_value = rows[0].get("x_country")
+            x_country_key = str(x_country_value).lower().strip() if x_country_value else None
+            
+            # Map Ship Via to Odoo's internal selection keys (e.g. "Boat / Air" -> "boat_air")
+            raw_ship = rows[0].get("x_ship_via")
+            ship_via_key = str(raw_ship).lower().replace(" / ", "_").strip() if raw_ship else None
+            
+            # Extract Payment Terms string from Excel and resolve it to Odoo ID dynamically
+            raw_payment = rows[0].get("payment_term_id")
+            payment_term_id = None
+            if raw_payment:
+                payment_term_id = self._po_service.find_payment_term_id(str(raw_payment).strip())
+                if not payment_term_id:
+                    self._logger.warning(
+                        f"Warning: Payment term '{raw_payment}' not found in Odoo. "
+                        "Falling back to Vendor's default payment term."
+                    )
+            
+            # Fallback to Vendor's default Payment Terms if missing or mapping failed
+            if not payment_term_id:
+                payment_field = vendor.get("property_supplier_payment_term_id")
+                payment_term_id = payment_field[0] if isinstance(payment_field, list) else None
 
             # --- Step 5: Build order lines (resolve each row — already validated in Step 4a) ---
             order_lines: list[dict] = []
@@ -420,7 +447,15 @@ class ImportController:
 
             # --- Step 7: Create the Purchase Order ---
             try:
-                order_id = self._po_service.create_order(partner_id, order_lines)
+                order_id, order_name = self._po_service.create_order(
+                    partner_id, 
+                    order_lines,
+                    x_country=x_country_key,
+                    payment_term_id=payment_term_id,
+                    date_order=rows[0].get("date_order"),
+                    x_ship_via=ship_via_key,
+                    x_sample_date=rows[0].get("x_sample_date"),
+                )
             except Exception as exc:
                 self._logger.error(
                     "Import failed. Unable to create the Purchase Order. "
@@ -440,11 +475,12 @@ class ImportController:
                 return result
 
             # --- Step 8: Success ---
-            self._logger.info(f"Purchase Order #{order_id} created successfully.")
+            self._logger.info(f"Purchase Order {order_name} created successfully.")
             result = ImportResult(
                 success=True,
                 file_path=file_path,
                 order_id=order_id,
+                order_name=order_name,
                 rows_processed=rows_processed,
                 rows_failed=0,
             )
@@ -493,20 +529,13 @@ class ImportController:
             The vendor name as read from the workbook (used even on failure).
         """
         outcome = "Success" if result.success else "Failed"
-        po_line = (
-            f"Purchase Order ID : #{result.order_id}"
-            if result.order_id
-            else "Purchase Order    : Not created"
-        )
+        po_line = result.order_name if result.order_name else (f"#{result.order_id}" if result.order_id else "None")
+        
         self._logger.info(
-            "\n--- Import Summary ---"
-            f"\nFile              : {Path(result.file_path).name}"
-            f"\nVendor            : {vendor_name}"
-            f"\nRows processed    : {result.rows_processed}"
-            f"\nRows failed       : {result.rows_failed}"
-            f"\nResult            : {outcome}"
-            f"\n{po_line}"
-            "\n----------------------"
+            f"Import Summary | File: {Path(result.file_path).name} | "
+            f"Vendor: {vendor_name} | Result: {outcome} | "
+            f"Passed: {result.rows_processed} | Failed: {result.rows_failed} | "
+            f"PO: {po_line}"
         )
 
     def _extract_vendor_name(self, rows: list[dict]) -> str:
@@ -549,7 +578,7 @@ class ImportController:
             Keys: ``product_id``, ``name``, ``x_color``, ``product_qty``,
             ``price_unit``, ``date_planned``, ``product_uom``.
         """
-        return {
+        line = {
             "product_id": product["id"],
             "name": str(row.get("x_vendor_code") or ""),
             "x_color": str(row.get("attribute_value_ids") or "").strip(),
@@ -558,3 +587,8 @@ class ImportController:
             "date_planned": str(row.get("date_planned") or ""),
             "product_uom": product["uom_id"][0],
         }
+        
+        if row.get("x_size"):
+            line["x_size"] = str(row.get("x_size")).strip()
+            
+        return line

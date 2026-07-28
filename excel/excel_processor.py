@@ -5,17 +5,22 @@ from excel.row_mapper import map_row, COLUMN_MAPPING
 
 # Columns that must exist in the workbook header row.
 REQUIRED_COLUMNS: list[str] = [
+    "Order Date",
     "Vendor",
-    "Vendor Style Number",
+    "TOP Sample Date",
+    "Due Date",
+    "Vendor Code",
     "Color",
+    "Size",
     "Quantity",
     "Unit Price",
-    "Due Date",
+    "Product Unit of Measure",
 ]
 
 # Internal field names that must be present in the PO header row (row 2).
 # These are validated once per file, not per line.
 HEADER_REQUIRED_FIELDS: list[str] = [
+    "date_order",         # Order Date
     "vendor",
 ]
 
@@ -26,7 +31,24 @@ LINE_REQUIRED_FIELDS: list[str] = [
     "product_qty",
     "price_unit",
     "date_planned",
+    "product_uom",
 ]
+
+REVERSE_MAPPING: dict = {
+    "date_order": "Order Date",
+    "vendor": "Vendor",
+    "x_country": "Country",
+    "payment_term_id": "Payment Terms",
+    "x_ship_via": "Ship Via",
+    "x_sample_date": "TOP Sample Date",
+    "x_vendor_code": "Vendor Code",
+    "attribute_value_ids": "Color",
+    "x_size": "Size",
+    "product_qty": "Quantity",
+    "price_unit": "Unit Price",
+    "date_planned": "Due Date",
+    "product_uom": "Product Unit of Measure",
+}
 
 
 class ExcelProcessor:
@@ -166,8 +188,14 @@ class ExcelProcessor:
             ``(True, "...")`` if valid, ``(False, "...")`` with a description
             of the missing fields otherwise.
         """
-        return self._validator.validate_no_empty_required_cells(
-            header_row, HEADER_REQUIRED_FIELDS
+        ok, msg = self._validator.validate_no_empty_required_cells(
+            header_row, HEADER_REQUIRED_FIELDS, display_mapping=REVERSE_MAPPING
+        )
+        if not ok:
+            return ok, msg
+            
+        return self._validator.validate_and_normalize_date(
+            header_row, "date_order", "Order Date"
         )
 
     # ------------------------------------------------------------------
@@ -192,7 +220,7 @@ class ExcelProcessor:
             of the missing fields otherwise.
         """
         ok, msg = self._validator.validate_no_empty_required_cells(
-            row, LINE_REQUIRED_FIELDS
+            row, LINE_REQUIRED_FIELDS, display_mapping=REVERSE_MAPPING
         )
         if not ok:
             return ok, msg
@@ -209,9 +237,18 @@ class ExcelProcessor:
         if not ok:
             return ok, msg
 
-        return self._validator.validate_and_normalize_date(
+        ok, msg = self._validator.validate_and_normalize_date(
             row, "date_planned", "Due Date"
         )
+        if not ok:
+            return ok, msg
+            
+        if row.get("x_sample_date"):
+            return self._validator.validate_and_normalize_date(
+                row, "x_sample_date", "TOP Sample Date"
+            )
+            
+        return True, ""
 
     # ------------------------------------------------------------------
     # Internal helpers

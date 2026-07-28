@@ -27,9 +27,9 @@ class AuthenticationManager:
     Handles credential validation, context creation, and logout operations.
     """
     
-    def __init__(self, url: str, db: str):
-        self.url = url
-        self.db = db
+    def __init__(self):
+        self.url: Optional[str] = None
+        self.db: Optional[str] = None
         self._context: Optional[AuthenticatedContext] = None
 
     @property
@@ -41,14 +41,17 @@ class AuthenticationManager:
     def is_authenticated(self) -> bool:
         return self._context is not None and self._context.is_connected
 
-    def authenticate(self, username: str, password: str) -> AuthenticatedContext:
+    def authenticate(self, url: str, db: str, username: str, password: str) -> AuthenticatedContext:
         """
         Validates credentials, initializes the Odoo connection, 
         and establishes an AuthenticatedContext upon success.
         """
+        self.url = url
+        self.db = db
+        
         client = OdooClient(
-            url=self.url,
-            db=self.db,
+            url=url,
+            db=db,
             username=username,
             password=password
         )

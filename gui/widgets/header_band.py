@@ -22,9 +22,13 @@ class HeaderBand(ttk.Frame):
         self._status_lbl = ttk.Label(self, text="● Connected to Odoo", style="Connected.TLabel")
         self._status_lbl.grid(row=0, column=2, pady=8, sticky="e")
 
+        # Settings Button
+        self.settings_btn = ttk.Label(self, text="⚙", font=("Segoe UI", 12), cursor="hand2")
+        self.settings_btn.grid(row=0, column=3, padx=(8, 8), pady=8, sticky="e")
+
         # Logout Power Button
         self.logout_btn = ttk.Label(self, text="⏻", font=("Segoe UI", 12), cursor="hand2")
-        self.logout_btn.grid(row=0, column=3, padx=(8, 16), pady=8, sticky="e")
+        self.logout_btn.grid(row=0, column=4, padx=(0, 16), pady=8, sticky="e")
 
     def set_connection_status(self, connected: bool, errored: bool = False) -> None:
         """
@@ -35,9 +39,12 @@ class HeaderBand(ttk.Frame):
         if errored:
             self._status_lbl.configure(text="● Connection check failed", style="Error.TLabel")
             self.logout_btn.grid()
+            self.settings_btn.grid()
         elif connected:
             self._status_lbl.configure(text="● Connected to Odoo", style="Connected.TLabel")
             self.logout_btn.grid()
+            self.settings_btn.grid()
         else:
             self._status_lbl.configure(text="○ Not Connected", style="Warning.TLabel")
             self.logout_btn.grid_remove()
+            self.settings_btn.grid_remove()

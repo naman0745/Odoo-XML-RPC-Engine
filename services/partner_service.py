@@ -17,25 +17,6 @@ class PartnerService(BaseService):
 
     MODEL = "res.partner"
 
-    def get_partner_by_id(self, partner_id):
-        result = self.client.read(
-            self.MODEL,
-            [partner_id]
-        )
-
-        return result[0] if result else None
-
-    def search_partners(self, domain=None, fields=None, limit=100):
-        if domain is None:
-            domain = []
-
-        return self.client.search_read(
-        self.MODEL,
-        domain=domain,
-        fields=fields,
-        limit=limit
-    )
-
     def get_vendor(self, vendor_name):
         vendors = self.client.search_read(
             self.MODEL,
@@ -50,6 +31,3 @@ class PartnerService(BaseService):
             raise AmbiguousVendorError(vendor_name, vendors)
 
         return vendors[0] if vendors else None
-
-    def vendor_exists(self, vendor_name):
-        return self.get_vendor(vendor_name) is not None

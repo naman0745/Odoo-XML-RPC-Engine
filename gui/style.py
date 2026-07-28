@@ -9,7 +9,7 @@ from tkinter import ttk
 
 import sys
 
-_FONT_FAMILY = _FONT_FAMILY
+_FONT_FAMILY = "Segoe UI"
 if sys.platform == "darwin":
     _FONT_FAMILY = "Helvetica"
 elif sys.platform == "linux":
@@ -17,7 +17,7 @@ elif sys.platform == "linux":
 
 FONT_REGULAR_12 = (_FONT_FAMILY, 10)
 FONT_REGULAR_13 = (_FONT_FAMILY, 10)
-FONT_REGULAR_14 = (_FONT_FAMILY, 11) 
+FONT_REGULAR_14 = (_FONT_FAMILY, 11)
 FONT_MEDIUM_14  = (_FONT_FAMILY, 11, "bold")
 FONT_BOLD_14    = (_FONT_FAMILY, 11, "bold")
 FONT_BOLD_16    = (_FONT_FAMILY, 13, "bold")
@@ -222,6 +222,16 @@ def apply_styles(root: tk.Tk) -> None:
         background=bg_1,
         foreground=ThemeColors["text_hero"],
         font=FONT_BOLD_14
+    )
+    style.configure(
+        "Card.TLabel",
+        background=bg_1,
+        foreground=ThemeColors["text_primary"]
+    )
+    style.configure(
+        "Card.TCheckbutton",
+        background=bg_1,
+        foreground=ThemeColors["text_primary"]
     )
     style.configure(
         "CardMeta.TLabel",

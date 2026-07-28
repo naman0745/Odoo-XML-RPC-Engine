@@ -62,9 +62,14 @@ class ExcelValidator:
             return False, f"Missing required columns: {', '.join(missing)}"
         return True, "All required columns present"
 
-    def validate_no_empty_required_cells(self, row, required_columns):
+    def validate_no_empty_required_cells(self, row, required_columns, display_mapping=None):
         """Checks that critical cells in a specific row are not empty."""
-        missing_values = [col for col in required_columns if row.get(col) is None or str(row.get(col)).strip() == ""]
+        missing_values = []
+        for col in required_columns:
+            if row.get(col) is None or str(row.get(col)).strip() == "":
+                display_name = display_mapping.get(col, col) if display_mapping else col
+                missing_values.append(display_name)
+                
         if missing_values:
             return False, f"Empty required cells found: {', '.join(missing_values)}"
         return True, "No empty required cells"

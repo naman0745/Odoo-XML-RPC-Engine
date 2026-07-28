@@ -79,7 +79,8 @@ class SuccessView(ttk.Frame):
             order = item["order"]
             res = item["result"]
             if res.success:
-                status = f"✅ SUCCESS: {order.filename} -> PO #{res.order_id}"
+                po_display = res.order_name if res.order_name else (f"#{res.order_id}" if res.order_id else "None")
+                status = f"✅ SUCCESS: {order.filename} -> {po_display}"
             else:
                 status = f"❌ FAILED: {order.filename} -> (Double-click to view error details)"
             self.listbox.insert(tk.END, status)

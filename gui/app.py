@@ -1,7 +1,6 @@
 import sys
 from typing import Callable
 
-from config.settings import ODOO_URL, ODOO_DB
 from connection.auth_manager import AuthenticationManager, AuthenticatedContext
 from controllers.import_controller import ImportController
 from filesystem.folder_scanner import FolderScanner
@@ -86,7 +85,7 @@ def main() -> int:
     logger = ImportLogger(log_file=str(workspace.logs / "import.log"))
     
     # 3. Startup Pipeline: Unauthenticated Stage
-    auth_manager = AuthenticationManager(url=ODOO_URL, db=ODOO_DB)
+    auth_manager = AuthenticationManager()
     
     # Controller requires a callback to initialize domain graph upon success
     controller = None  # Reference required in closure

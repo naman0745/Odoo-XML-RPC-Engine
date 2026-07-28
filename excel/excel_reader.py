@@ -31,10 +31,10 @@ class ExcelReader:
             if all(cell is None for cell in row):
                 continue
 
-    # Create a dictionary mapping headers to row values
+            # Create a dictionary mapping headers to row values
             row_dict = dict(zip(headers, row))
 
-    # Store the original Excel row number
+            # Store the original Excel row number
             row_dict["_row"] = row_number
 
             rows.append(row_dict)

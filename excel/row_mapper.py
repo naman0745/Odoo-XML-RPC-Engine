@@ -1,13 +1,20 @@
 # Configuration for mapping Excel headers to internal field names
 # Format: "Excel Column Name": "internal_field_name"
 COLUMN_MAPPING = {
+    "Order Date": "date_order",
     "Vendor": "vendor",
-    "Vendor Style Number": "x_vendor_code",
+    "Country": "x_country",
+    "Payment Terms": "payment_term_id",
+    "Ship Via": "x_ship_via",
+    "TOP Sample Date": "x_sample_date",
+    "Due Date": "date_planned",
     "Vendor Code": "x_vendor_code",
+    "Vendor Style Number": "x_vendor_code",  # Alias support
     "Color": "attribute_value_ids",
+    "Size": "x_size",
     "Quantity": "product_qty",
     "Unit Price": "price_unit",
-    "Due Date": "date_planned",
+    "Product Unit of Measure": "product_uom",
 }
 
 def map_row(row, mapping=COLUMN_MAPPING):

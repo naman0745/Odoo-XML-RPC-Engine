@@ -1,13 +1,10 @@
 """
 gui/controllers/gui_controller.py
 """
-import os
 import threading
 import tkinter.messagebox as messagebox
-import tkinter.filedialog as filedialog
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from typing import Optional, Callable
 
@@ -28,7 +25,6 @@ from config.app_config import AppConfig
 import time
 import subprocess
 import keyring
-from config.settings import ODOO_USERNAME
 from utils.os_utils import open_file_or_explorer
 
 APP_KEYRING_SERVICE = "PO_Importer_App"
@@ -100,14 +96,13 @@ class GuiController:
     def _bind_events(self) -> None:
         self.login_view.on_login = self._attempt_login
         
-        self.scan_view.on_selection_changed = None # unused locally
         self.scan_view.on_refresh = self._handle_refresh
         self.scan_view.on_process_clicked = self._start_batch_import
         self.scan_view.on_open_folder = self._open_incoming_folder
         self.scan_view.on_change_folder = self._change_folder
 
         self.success_view.on_back_clicked = self.start
-        self.success_view.on_view_failure = self._handle_drill_down_failure
+        self.success_view.on_view_failure = self._view_batch_failure
         
         # For fatal failures blocking the sequence
         self.failure_view.on_retry_clicked = self.start
@@ -116,6 +111,7 @@ class GuiController:
 
         # Global Config Actions
         self.window.header.logout_btn.bind("<Button-1>", self._handle_logout_click)
+        self.window.header.settings_btn.bind("<Button-1>", self._handle_settings_click)
         self.window.status_bar._log_lbl.bind("<Button-1>", lambda e: self._open_log_file())
 
         # Keyboard Navigation
@@ -144,13 +140,24 @@ class GuiController:
         if order_to_open and order_to_open.full_path:
             open_file_or_explorer(order_to_open.full_path)
 
-    def _handle_drill_down_failure(self, args: list) -> None:
-        """Route to FailureView dynamically, modifying the Back button to bounce to SuccessView."""
+    def _view_batch_failure(self, args: list) -> None:
+        """
+        Called when the user clicks 'View error details' from the batch success view.
+        """
         result, order = args
+        import tkinter as tk
+        from gui.views.failure_view import FailureView
         
-        self._current_error_order = order
+        modal = tk.Toplevel(self.window)
+        modal.title(f"Error Details: {order.filename}")
+        modal.geometry("700x550")
+        modal.transient(self.window)
+        modal.grab_set()
         
-        self.failure_view.set_error(
+        view = FailureView(modal)
+        view.pack(fill="both", expand=True)
+        
+        view.set_error(
             workbook=order.filename,
             stage="Batch Execution",
             checked=result.rows_processed,
@@ -159,19 +166,14 @@ class GuiController:
             row_errors=result.row_errors
         )
         
-        # Override the return routing temporarily
-        original_back = self.failure_view.on_back_clicked
-        original_retry = self.failure_view.on_retry_clicked
+        view.on_back_clicked = modal.destroy
+        view.back_btn.configure(text="Close")
+        view.retry_btn.pack_forget()
         
-        def _return_to_batch():
-            self._current_error_order = None
-            self.window.show_view("success")
-            self.failure_view.on_back_clicked = original_back
-            self.failure_view.on_retry_clicked = original_retry
+        def on_open_excel():
+            open_file_or_explorer(str(order.filepath))
             
-        self.failure_view.on_back_clicked = _return_to_batch
-        self.failure_view.on_retry_clicked = _return_to_batch
-        self.window.show_view("failure")
+        view.on_open_excel_clicked = on_open_excel
 
     def _handle_enter_key(self, event) -> None:
         if getattr(self, '_is_importing', False):
@@ -221,19 +223,28 @@ class GuiController:
             self.window.show_view("login")
             
             config = AppConfig()
+            last_url = config.get_odoo_url()
+            last_db = config.get_odoo_db()
             last_user = config.get_last_username()
+            
+            # Remove legacy fallback
             if not last_user:
-                last_user = ODOO_USERNAME or ""
+                last_user = ""
 
+            saved_password = ""
             if last_user:
                 try:
-                    saved_password = keyring.get_password(APP_KEYRING_SERVICE, last_user)
-                    if saved_password:
-                        self.login_view.set_credentials(last_user, saved_password, remember=True)
-                        self.window.after(100, lambda: self._attempt_login(last_user, saved_password, remember_me=True))
-                        return
+                    saved = keyring.get_password(APP_KEYRING_SERVICE, last_user)
+                    if saved:
+                        saved_password = saved
                 except Exception:
                     pass
+
+            self.login_view.set_credentials(last_url, last_db, last_user, saved_password, remember=bool(saved_password))
+            
+            if last_url and last_db and last_user and saved_password:
+                self.window.after(100, lambda: self._attempt_login(last_url, last_db, last_user, saved_password, remember_me=True))
+                return
 
             self.login_view.clear_password()
         else:
@@ -245,6 +256,22 @@ class GuiController:
             return
         if messagebox.askyesno("Logout", "Are you sure you want to log out of Odoo?", parent=self.window):
             self.logout()
+
+    def _handle_settings_click(self, event=None) -> None:
+        if getattr(self, '_is_importing', False) or not self.is_connected:
+            return
+            
+        from gui.views.settings_modal import SettingsModal
+        
+        def on_save(new_url, new_db):
+            messagebox.showinfo(
+                "Settings Saved", 
+                "Connection details updated. You have been logged out and must connect to the new environment.", 
+                parent=self.window
+            )
+            self.logout()
+            
+        SettingsModal(self.window, on_save)
 
     def logout(self) -> None:
         if getattr(self, '_is_importing', False) and self.is_connected:
@@ -263,17 +290,24 @@ class GuiController:
         self.window.header.set_connection_status(False, errored=False)
         self.start()
 
-    def _attempt_login(self, username, password, remember_me=False) -> None:
+    def _attempt_login(self, url, db, username, password, remember_me=False):
+        view = self.login_view
+        view.clear_error()
         try:
-            context = self.auth_manager.authenticate(username, password)
+            context = self.auth_manager.authenticate(url, db, username, password)
+            
+            config = AppConfig()
+            config.set_odoo_url(url)
+            config.set_odoo_db(db)
             
             if remember_me:
-                AppConfig().set_last_username(username)
+                config.set_last_username(username)
                 try:
                     keyring.set_password(APP_KEYRING_SERVICE, username, password)
                 except Exception:
                     pass
             else:
+                config.set_last_username("")
                 try:
                     keyring.delete_password(APP_KEYRING_SERVICE, username)
                 except Exception:
