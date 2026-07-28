@@ -78,11 +78,9 @@ def main() -> int:
     # 1. Initialize Root
     root = MainWindow()
 
-    # 2. Workspace & Logging Core
+    # 2. Workspace Core
     workspace = WorkspaceManager()
     workspace.ensure_workspace()
-    manifest = ImportManifest(workspace.config / "import_manifest.json")
-    logger = ImportLogger(log_file=str(workspace.logs / "import.log"))
     
     # 3. Startup Pipeline: Unauthenticated Stage
     auth_manager = AuthenticationManager()
@@ -91,6 +89,11 @@ def main() -> int:
     controller = None  # Reference required in closure
     
     def handle_auth_success(context: AuthenticatedContext):
+        # Instantiate manifest and logger here so they use the most up-to-date workspace paths
+        # (in case the user changed the workspace folder before logging in).
+        manifest = ImportManifest(controller.workspace.config / "import_manifest.json")
+        logger = ImportLogger()
+        logger.set_log_file(str(controller.workspace.logs / "import.log"))
         init_authenticated(controller, context, manifest, logger)
         
     controller = init_unauthenticated(root, workspace, auth_manager, handle_auth_success)

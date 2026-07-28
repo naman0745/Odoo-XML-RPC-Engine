@@ -63,6 +63,10 @@ class ImportManifest:
     # Public API
     # ------------------------------------------------------------------
 
+    def set_path(self, manifest_path: Path) -> None:
+        """Update the file path for the manifest dynamically."""
+        self._path = manifest_path
+
     def is_imported(self, fingerprint: str) -> bool:
         """
         Return ``True`` if *fingerprint* is already in the manifest.

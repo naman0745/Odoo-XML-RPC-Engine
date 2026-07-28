@@ -352,23 +352,42 @@ class GuiController:
         open_file_or_explorer(self.workspace.incoming)
 
     def _change_folder(self) -> None:
-        """Allow user to change the workspace folder."""
+        """Allow user to change the workspace folder.
+
+        The user picks a *parent* directory; a ``PO Importer`` bundle folder
+        is automatically created inside it to keep the four sub-directories
+        neatly grouped rather than scattered at the chosen location.
+        """
         from tkinter import filedialog
         from config.app_config import AppConfig
-        
+
         current_path = str(self.workspace.root)
         new_dir = filedialog.askdirectory(
             initialdir=current_path,
             parent=self.window,
-            title="Select Workspace Folder"
+            title="Select a Location for the PO Importer Folder"
         )
-        if new_dir and new_dir != current_path:
-            # Update workspace configuration
-            AppConfig().set_workspace_path(Path(new_dir))
-            self.workspace._root = Path(new_dir)
-            self.workspace.ensure_workspace()
-            # Refresh to show files from new location
-            self._handle_refresh()
+        if new_dir:
+            # Always bundle sub-folders inside a dedicated parent folder so
+            # the user's chosen location stays uncluttered.
+            bundle_path = Path(new_dir) / "PO Files"
+
+            if str(bundle_path) != current_path:
+                AppConfig().set_workspace_path(bundle_path)
+                self.workspace._root = bundle_path
+                self.workspace.ensure_workspace()
+                
+                # Update logger handler path
+                from utils.logger import ImportLogger
+                logger = ImportLogger()
+                logger.set_log_file(str(self.workspace.logs / "import.log"))
+                
+                # Update manifest path if import_ctrl initialized
+                if self.import_ctrl and self.import_ctrl._manifest:
+                    self.import_ctrl._manifest.set_path(self.workspace.config / "import_manifest.json")
+                    
+                # Refresh to show files from new location
+                self._handle_refresh()
 
     # -------------------------------------------------------------
     # Batch Processing Pipeline 

@@ -43,6 +43,29 @@ class ImportLogger:
         self._logger.addHandler(file_handler)
         self._logger.addHandler(console_handler)
 
+    def set_log_file(self, log_file: str) -> None:
+        """Update the log file path dynamically."""
+        for handler in self._logger.handlers[:]:
+            if isinstance(handler, RotatingFileHandler):
+                self._logger.removeHandler(handler)
+                handler.close()
+                break
+        
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        file_handler = RotatingFileHandler(
+            log_path,
+            maxBytes=1_000_000,
+            backupCount=3,
+            encoding="utf-8",
+        )
+        formatter = logging.Formatter("[%(levelname)s] %(message)s")
+        file_handler.setFormatter(formatter)
+        
+        # Prepend to handlers so it logs to file first
+        self._logger.handlers.insert(0, file_handler)
+
     def info(self, msg: str) -> None:
         self._logger.info(msg)
 

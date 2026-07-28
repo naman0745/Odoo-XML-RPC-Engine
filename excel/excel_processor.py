@@ -3,25 +3,38 @@ from excel.validators import ExcelValidator
 from excel.row_mapper import map_row, COLUMN_MAPPING
 
 
-# Columns that must exist in the workbook header row.
+# Columns that MUST exist in the workbook header row and must be non-empty
+# where applicable.  Any column not listed here or in OPTIONAL_COLUMNS is
+# ignored.
 REQUIRED_COLUMNS: list[str] = [
     "Order Date",
     "Vendor",
-    "TOP Sample Date",
+    "Country",
+    "Payment Terms",
+    "Ship Via",
     "Due Date",
-    "Vendor Code",
+    "Vendor Code",          # or "Vendor Style Number" — checked separately
     "Color",
-    "Size",
     "Quantity",
     "Unit Price",
     "Product Unit of Measure",
+]
+
+# Columns that MAY exist.  If a column is absent the reader still emits the
+# mapped key with a None value so downstream code never KeyErrors.
+OPTIONAL_COLUMNS: list[str] = [
+    "TOP Sample Date",
+    "Size",
 ]
 
 # Internal field names that must be present in the PO header row (row 2).
 # These are validated once per file, not per line.
 HEADER_REQUIRED_FIELDS: list[str] = [
     "date_order",         # Order Date
-    "vendor",
+    "vendor",             # Vendor
+    "x_country",          # Country
+    "payment_term_id",    # Payment Terms
+    "x_ship_via",         # Ship Via
 ]
 
 # Internal field names that must not be empty on every individual order line.
@@ -126,16 +139,19 @@ class ExcelProcessor:
 
         has_vendor_code = "Vendor Code" in headers
         has_vendor_style = "Vendor Style Number" in headers
-        
+
         if not (has_vendor_code or has_vendor_style):
             errors.append("Missing required columns: Vendor Code or Vendor Style Number")
 
-        other_required = [col for col in REQUIRED_COLUMNS if col != "Vendor Style Number"]
+        # Validate all mandatory columns (excluding the vendor code handled above).
+        other_required = [col for col in REQUIRED_COLUMNS if col not in ("Vendor Code", "Vendor Style Number")]
         ok, msg = self._validator.validate_required_columns(
             headers, other_required
         )
         if not ok:
             errors.append(msg)
+
+        # Optional columns: absence is silently accepted — no error appended.
 
         return len(errors) == 0, errors
 
